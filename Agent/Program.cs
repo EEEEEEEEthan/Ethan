@@ -45,11 +45,8 @@ if(!string.IsNullOrEmpty(environmentModel))
 if(!string.IsNullOrEmpty(environmentBaseUrl))
 	baseUrl = environmentBaseUrl.TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
-var skillHolder = new SkillIndexHolder
-{
-	Index = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots()),
-};
-Console.WriteLine($"已建立技能索引：{skillHolder.Index.Count} 条。");
+var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
+Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 if(string.IsNullOrWhiteSpace(apiKey))
 	Console.WriteLine(
@@ -77,7 +74,7 @@ while(true)
 			   ref apiKey,
 			   ref model,
 			   ref baseUrl,
-			   skillHolder,
+			   skillIndex,
 			   conversation,
 			   out var connectionSettingsTouched))
 			break;
@@ -132,7 +129,7 @@ while(true)
 			serviceId: null,
 			httpClient: httpClient);
 		activeKernel = builder.Build();
-		activeKernel.ImportPluginFromObject(new SkillLearningPlugin(skillHolder), "skills");
+		activeKernel.ImportPluginFromObject(new SkillLearningPlugin(skillIndex), "skills");
 		lastKernelConfig = new(apiKey, model, baseUrl);
 	}
 	var currentKernel = activeKernel
@@ -146,7 +143,7 @@ while(true)
 			currentKernel,
 			chat,
 			conversation,
-			skillHolder);
+			skillIndex);
 	}
 	catch(Exception exception)
 	{
@@ -162,13 +159,13 @@ static void refreshSkillSystemMessage(ChatHistory chatHistory, IReadOnlyDictiona
 		chatHistory.RemoveAt(0);
 	chatHistory.Insert(0, new(AuthorRole.System, SkillSummary.BuildAgentSystemPrompt(index)));
 }
-static async Task<string?> runStreamingChatTurnAsync(
+static async Task runStreamingChatTurnAsync(
 	Kernel kernel,
 	IChatCompletionService chatCompletion,
 	ChatHistory conversation,
-	SkillIndexHolder skillHolder)
+	Dictionary<string, SkillSummary> skillIndex)
 {
-	refreshSkillSystemMessage(conversation, skillHolder.Index);
+	refreshSkillSystemMessage(conversation, skillIndex);
 	var execution = new OpenAIPromptExecutionSettings {ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,};
 	var textBuffer = new StringBuilder();
 	var streamPendingCarriageReturn = false;
@@ -194,7 +191,6 @@ static async Task<string?> runStreamingChatTurnAsync(
 		Console.Write(trailingNewline);
 	await Console.Out.FlushAsync().ConfigureAwait(false);
 	Console.WriteLine();
-	return textBuffer.Length > 0? textBuffer.ToString() : null;
 }
 static bool tryHandleSlash(
 	string trimmed,
@@ -202,7 +198,7 @@ static bool tryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
-	SkillIndexHolder skillHolder,
+	Dictionary<string, SkillSummary> skillIndex,
 	ChatHistory conversation,
 	out bool connectionSettingsTouched)
 {
@@ -274,9 +270,14 @@ static bool tryHandleSlash(
 			Console.WriteLine("已清空对话。");
 			return true;
 		case"/update-skills":
-			skillHolder.Index = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
-			Console.WriteLine($"已重建技能索引：{skillHolder.Index.Count} 条。");
+		{
+			var rebuilt = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
+			skillIndex.Clear();
+			foreach(var pair in rebuilt)
+				skillIndex[pair.Key] = pair.Value;
+			Console.WriteLine($"已重建技能索引：{skillIndex.Count} 条。");
 			return true;
+		}
 		case"/exit":
 		case"/quit":
 			return false;
