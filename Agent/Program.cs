@@ -1,5 +1,6 @@
 ﻿using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using PrettyPrompt;
 using PrettyPrompt.Completion;
@@ -12,7 +13,7 @@ var userSettingsDirectory = Path.Combine(
 	"Agent");
 var userSettingsFilepath = Path.Combine(userSettingsDirectory, "settings.json");
 var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
-List<ChatMessage> messages = [];
+List<PersistedChatMessage> messages = [];
 var environmentApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 var environmentModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
 var environmentBaseUrl = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
@@ -75,21 +76,44 @@ while(true)
 		Console.WriteLine("请先 /apikey <你的密钥>");
 		continue;
 	}
+	var turnStartIndex = messages.Count;
 	messages.Add(new("user", trimmed));
 	try
 	{
-		var reply = await completeChatAsync(
-			httpClient,
-			baseUrl,
-			apiKey,
-			model,
-			messages);
-		messages.Add(new("assistant", reply));
-		Console.WriteLine(reply);
+		var conversationFinished = false;
+		for(var guard = 0; guard < 64; guard++)
+		{
+			var turn = await sendChatCompletionTurnAsync(httpClient, baseUrl, apiKey!, model, messages);
+			if(string.Equals(turn.FinishReason, "tool_calls", StringComparison.OrdinalIgnoreCase)
+			   && turn.ToolCalls is {Count: > 0})
+			{
+				messages.Add(
+					new(
+						"assistant",
+						string.IsNullOrWhiteSpace(turn.AssistantText)? null : turn.AssistantText,
+						turn.ToolCalls));
+				foreach(var call in turn.ToolCalls)
+				{
+					var toolText = executeLocalToolCall(call);
+					messages.Add(new("tool", toolText, null, call.Id));
+				}
+				continue;
+			}
+			if(string.Equals(turn.FinishReason, "tool_calls", StringComparison.OrdinalIgnoreCase))
+				throw new InvalidOperationException("响应为 tool_calls 但未包含任何 tool_call。");
+			var finalText = turn.AssistantText ?? string.Empty;
+			messages.Add(new("assistant", finalText));
+			Console.WriteLine(finalText);
+			conversationFinished = true;
+			break;
+		}
+		if(!conversationFinished)
+			throw new InvalidOperationException("工具调用轮次超过上限，已中止。");
 	}
 	catch(Exception ex)
 	{
-		messages.RemoveAt(messages.Count - 1);
+		if(messages.Count > turnStartIndex)
+			messages.RemoveRange(turnStartIndex, messages.Count - turnStartIndex);
 		Console.WriteLine($"请求失败：{ex.Message}");
 	}
 }
@@ -99,7 +123,7 @@ static bool tryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
-	List<ChatMessage> messages)
+	List<PersistedChatMessage> messages)
 {
 	var spaceIndex = trimmed.IndexOf(' ');
 	var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
@@ -116,6 +140,7 @@ static bool tryHandleSlash(
 				                   火山方舟填 https://ark.cn-beijing.volces.com/api/v3（勿用 /responses），请求 …/api/v3/chat/completions
 				                   若已含完整路径 …/chat/completions 则原样使用
 				环境变量 OPENAI_* 若已设置则优先于配置文件
+				模型可调用工具 get_directory_tree（本机目录树，通配 * ?）
 				/clear             清空本轮对话上下文
 				/exit 或 /quit     退出
 				""");
@@ -171,15 +196,13 @@ static void saveUserChatSettings(string filepath, string? apiKey, string model, 
 	var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
 	File.WriteAllText(filepath, jsonText);
 }
-static async Task<string> completeChatAsync(
+static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 	HttpClient httpClient,
 	string baseUrl,
 	string apiKey,
 	string model,
-	IReadOnlyList<ChatMessage> messages)
+	IReadOnlyList<PersistedChatMessage> conversation)
 {
-	var payload = new ChatCompletionRequest(model, messages.Select(static message => new ChatMessageDto(message.Role, message.Content)).ToList());
-	var json = JsonSerializer.Serialize(payload, ChatJson.serializer);
 	var trimmedUrl = baseUrl.TrimEnd('/');
 	string endpoint;
 	if(trimmedUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
@@ -196,6 +219,14 @@ static async Task<string> completeChatAsync(
 	}
 	else
 		endpoint = $"{trimmedUrl}/v1/chat/completions";
+	var payload = new JsonObject
+	{
+		["model"] = model,
+		["messages"] = buildOpenAiMessagesArray(conversation),
+		["tools"] = JsonNode.Parse(OpenAiToolRegistration.DefinitionsJson)!,
+		["tool_choice"] = "auto",
+	};
+	var json = payload.ToJsonString();
 	using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
 	request.Headers.Authorization = new("Bearer", apiKey);
 	request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -210,25 +241,136 @@ static async Task<string> completeChatAsync(
 	var first = choices[0];
 	if(!first.TryGetProperty("message", out var messageElement))
 		throw new InvalidOperationException($"响应缺少 message：{body}");
-	var content = messageElement.GetProperty("content").GetString() ?? string.Empty;
-	return content;
+	var finishReason = first.TryGetProperty("finish_reason", out var finishElement)
+		? finishElement.GetString() ?? "stop"
+		: "stop";
+	string? assistantText = null;
+	if(messageElement.TryGetProperty("content", out var contentElement)
+	   && contentElement.ValueKind is JsonValueKind.String)
+		assistantText = contentElement.GetString();
+	IReadOnlyList<AssistantToolCall>? toolCalls = null;
+	if(messageElement.TryGetProperty("tool_calls", out var toolCallsElement)
+	   && toolCallsElement.ValueKind == JsonValueKind.Array
+	   && toolCallsElement.GetArrayLength() > 0)
+	{
+		var parsedCalls = new List<AssistantToolCall>();
+		foreach(var callElement in toolCallsElement.EnumerateArray())
+		{
+			if(!callElement.TryGetProperty("id", out var idElement))
+				continue;
+			var callId = idElement.GetString();
+			if(string.IsNullOrEmpty(callId))
+				continue;
+			var callType = callElement.TryGetProperty("type", out var typeElement)
+				? typeElement.GetString() ?? "function"
+				: "function";
+			if(!callElement.TryGetProperty("function", out var functionElement))
+				continue;
+			var functionName = functionElement.TryGetProperty("name", out var nameElement)
+				? nameElement.GetString() ?? string.Empty
+				: string.Empty;
+			var arguments = functionElement.TryGetProperty("arguments", out var argumentsElement)
+				? argumentsElement.GetString() ?? "{}"
+				: "{}";
+			parsedCalls.Add(
+				new(
+					callId,
+					callType,
+					new AssistantToolFunction(functionName, arguments)));
+		}
+		if(parsedCalls.Count > 0)
+			toolCalls = parsedCalls;
+	}
+	return new(finishReason, assistantText, toolCalls);
+}
+static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> conversation)
+{
+	var messagesArray = new JsonArray();
+	foreach(var message in conversation)
+	{
+		var node = new JsonObject {["role"] = message.Role};
+		switch(message.Role)
+		{
+			case "user":
+				node["content"] = message.Content ?? string.Empty;
+				break;
+			case "assistant":
+				if(message.ToolCalls is {Count: > 0})
+				{
+					if(!string.IsNullOrWhiteSpace(message.Content))
+						node["content"] = message.Content;
+					var toolCallsArray = new JsonArray();
+					foreach(var call in message.ToolCalls)
+					{
+						toolCallsArray.Add(
+							new JsonObject
+							{
+								["id"] = call.Id,
+								["type"] = call.Type,
+								["function"] = new JsonObject
+								{
+									["name"] = call.Function.Name,
+									["arguments"] = call.Function.Arguments,
+								},
+							});
+					}
+					node["tool_calls"] = toolCallsArray;
+				}
+				else
+					node["content"] = message.Content ?? string.Empty;
+				break;
+			case "tool":
+				node["tool_call_id"] = message.ToolCallId ?? string.Empty;
+				node["content"] = message.Content ?? string.Empty;
+				break;
+		}
+		messagesArray.Add(node);
+	}
+	return messagesArray;
+}
+static string executeLocalToolCall(AssistantToolCall call)
+{
+	if(call.Function.Name == DirectoryTreeTool.Name)
+	{
+		var arguments = JsonSerializer.Deserialize<GetDirectoryTreeArguments>(call.Function.Arguments, ChatJson.serializer);
+		if(arguments is null)
+			return "错误：get_directory_tree 参数无法解析。";
+		return DirectoryTreeTool.Invoke(arguments.Root, arguments.MaxDepth, arguments.Filter);
+	}
+	return $"错误：未实现的工具 {call.Function.Name}";
+}
+file static class OpenAiToolRegistration
+{
+	internal static readonly string DefinitionsJson = createDefinitionsJson();
+	static string createDefinitionsJson()
+	{
+		var parameters = JsonNode.Parse(DirectoryTreeTool.JsonSchemaParameters)!;
+		var function = new JsonObject
+		{
+			["name"] = DirectoryTreeTool.Name,
+			["description"] = "读取本机目录树。filter 为名称通配（* ?），省略或 * 表示全部；不匹配的项会裁掉，仅保留通向匹配项的祖先目录。",
+			["parameters"] = parameters,
+		};
+		var tool = new JsonObject {["type"] = "function", ["function"] = function};
+		return new JsonArray(tool).ToJsonString();
+	}
 }
 file sealed record UserChatSettings(
 	[property: JsonPropertyName("apiKey")]string? ApiKey,
 	[property: JsonPropertyName("baseUrl")]
 	string BaseUrl,
 	[property: JsonPropertyName("model")]string Model);
-file sealed record ChatMessage(string Role, string Content);
-// ReSharper disable NotAccessedPositionalProperty.Local
-file sealed record ChatMessageDto(
-	[property: JsonPropertyName("role")]string Role,
-	[property: JsonPropertyName("content")]
-	string Content);
-file sealed record ChatCompletionRequest(
-	[property: JsonPropertyName("model")]string Model,
-	[property: JsonPropertyName("messages")]
-	IReadOnlyList<ChatMessageDto> Messages);
-// ReSharper restore NotAccessedPositionalProperty.Local
+file sealed record PersistedChatMessage(
+	string Role,
+	string? Content = null,
+	IReadOnlyList<AssistantToolCall>? ToolCalls = null,
+	string? ToolCallId = null);
+file sealed record AssistantToolCall(string Id, string Type, AssistantToolFunction Function);
+file sealed record AssistantToolFunction(string Name, string Arguments);
+file sealed record ChatCompletionTurnResult(
+	string FinishReason,
+	string? AssistantText,
+	IReadOnlyList<AssistantToolCall>? ToolCalls);
 file static class ChatJson
 {
 	internal static readonly JsonSerializerOptions serializer = new()
