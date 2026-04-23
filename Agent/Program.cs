@@ -2,6 +2,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Agent;
 using PrettyPrompt;
 using PrettyPrompt.Completion;
 using PrettyPrompt.Consoles;
@@ -83,9 +84,14 @@ while(true)
 		var conversationFinished = false;
 		for(var guard = 0; guard < 64; guard++)
 		{
-			var turn = await sendChatCompletionTurnAsync(httpClient, baseUrl, apiKey!, model, messages);
+			var turn = await sendChatCompletionTurnAsync(
+				httpClient,
+				baseUrl,
+				apiKey,
+				model,
+				messages);
 			if(string.Equals(turn.FinishReason, "tool_calls", StringComparison.OrdinalIgnoreCase)
-			   && turn.ToolCalls is {Count: > 0})
+			   && turn.ToolCalls is {Count: > 0,})
 			{
 				messages.Add(
 					new(
@@ -229,7 +235,7 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 	{
 		["model"] = model,
 		["messages"] = buildOpenAiMessagesArray(conversation),
-		["tools"] = JsonNode.Parse(OpenAiToolRegistration.DefinitionsJson)!,
+		["tools"] = JsonNode.Parse(OpenAiToolRegistration.definitionsJson)!,
 		["tool_choice"] = "auto",
 		["stream"] = true,
 	};
@@ -260,14 +266,8 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 		if(data == "[DONE]")
 			break;
 		JsonDocument chunk;
-		try
-		{
-			chunk = JsonDocument.Parse(data);
-		}
-		catch(JsonException)
-		{
-			continue;
-		}
+		try { chunk = JsonDocument.Parse(data); }
+		catch(JsonException) { continue; }
 		using(chunk)
 		{
 			var root = chunk.RootElement;
@@ -303,10 +303,8 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 			}
 			if(delta.TryGetProperty("tool_calls", out var deltaToolCalls)
 			   && deltaToolCalls.ValueKind == JsonValueKind.Array)
-			{
 				foreach(var callDelta in deltaToolCalls.EnumerateArray())
 					mergeStreamingToolCallDelta(toolCallAccumulators, callDelta);
-			}
 		}
 	}
 	Console.WriteLine();
@@ -322,12 +320,12 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 		var parsedCalls = new List<AssistantToolCall>();
 		foreach(var accumulator in ordered)
 		{
-			if(string.IsNullOrEmpty(accumulator.Id))
+			if(string.IsNullOrEmpty(accumulator.id))
 				continue;
-			var callType = string.IsNullOrEmpty(accumulator.Type)? "function" : accumulator.Type;
-			var functionName = accumulator.Name ?? string.Empty;
-			var arguments = accumulator.ArgumentsBuilder.Length > 0? accumulator.ArgumentsBuilder.ToString() : "{}";
-			parsedCalls.Add(new(accumulator.Id!, callType, new AssistantToolFunction(functionName, arguments)));
+			var callType = string.IsNullOrEmpty(accumulator.type)? "function" : accumulator.type;
+			var functionName = accumulator.name ?? string.Empty;
+			var arguments = accumulator.argumentsBuilder.Length > 0? accumulator.argumentsBuilder.ToString() : "{}";
+			parsedCalls.Add(new(accumulator.id!, callType, new(functionName, arguments)));
 		}
 		if(parsedCalls.Count > 0)
 			toolCalls = parsedCalls;
@@ -351,13 +349,13 @@ static void mergeStreamingToolCallDelta(
 	{
 		var id = idElement.GetString();
 		if(!string.IsNullOrEmpty(id))
-			accumulator.Id = id;
+			accumulator.id = id;
 	}
 	if(callDelta.TryGetProperty("type", out var typeElement) && typeElement.ValueKind is JsonValueKind.String)
 	{
 		var type = typeElement.GetString();
 		if(!string.IsNullOrEmpty(type))
-			accumulator.Type = type;
+			accumulator.type = type;
 	}
 	if(!callDelta.TryGetProperty("function", out var functionDelta))
 		return;
@@ -365,14 +363,14 @@ static void mergeStreamingToolCallDelta(
 	{
 		var name = nameElement.GetString();
 		if(!string.IsNullOrEmpty(name))
-			accumulator.Name = name;
+			accumulator.name = name;
 	}
 	if(functionDelta.TryGetProperty("arguments", out var argumentsElement)
 	   && argumentsElement.ValueKind is JsonValueKind.String)
 	{
 		var argumentsPiece = argumentsElement.GetString();
 		if(!string.IsNullOrEmpty(argumentsPiece))
-			accumulator.ArgumentsBuilder.Append(argumentsPiece);
+			accumulator.argumentsBuilder.Append(argumentsPiece);
 	}
 }
 static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> conversation)
@@ -380,20 +378,19 @@ static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> co
 	var messagesArray = new JsonArray();
 	foreach(var message in conversation)
 	{
-		var node = new JsonObject {["role"] = message.Role};
+		var node = new JsonObject {["role"] = message.Role,};
 		switch(message.Role)
 		{
-			case "user":
+			case"user":
 				node["content"] = message.Content ?? string.Empty;
 				break;
-			case "assistant":
-				if(message.ToolCalls is {Count: > 0})
+			case"assistant":
+				if(message.ToolCalls is {Count: > 0,})
 				{
 					if(!string.IsNullOrWhiteSpace(message.Content))
 						node["content"] = message.Content;
 					var toolCallsArray = new JsonArray();
 					foreach(var call in message.ToolCalls)
-					{
 						toolCallsArray.Add(
 							new JsonObject
 							{
@@ -405,13 +402,12 @@ static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> co
 									["arguments"] = call.Function.Arguments,
 								},
 							});
-					}
 					node["tool_calls"] = toolCallsArray;
 				}
 				else
 					node["content"] = message.Content ?? string.Empty;
 				break;
-			case "tool":
+			case"tool":
 				node["tool_call_id"] = message.ToolCallId ?? string.Empty;
 				node["content"] = message.Content ?? string.Empty;
 				break;
@@ -420,14 +416,11 @@ static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> co
 	}
 	return messagesArray;
 }
-/// <summary>流式片段：Windows 控制台遇裸 LF 常不换列首；与跨分片的 CR+LF 拼合一并处理。</summary>
 static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
 {
 	if(segment.Length == 0)
 		return string.Empty;
-	if(Environment.NewLine is not "\r\n")
-		return segment;
-	if(!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0)
+	if(Environment.NewLine is not"\r\n" || (!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0))
 		return segment;
 	var builder = new StringBuilder(segment.Length + 4);
 	if(pendingCarriageReturn)
@@ -469,14 +462,12 @@ static string formatTextForWindowsConsolePiece(string segment, ref bool pendingC
 	}
 	return builder.ToString();
 }
-
 static string normalizeTextForWindowsConsoleWrite(string text)
 {
-	if(text.Length == 0 || Environment.NewLine is not "\r\n")
+	if(text.Length == 0 || Environment.NewLine is not"\r\n")
 		return text;
 	return text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", "\r\n", StringComparison.Ordinal);
 }
-
 static void writeStreamingConsole(string text)
 {
 	text = normalizeTextForWindowsConsoleWrite(text);
@@ -490,28 +481,28 @@ static void writeStreamingConsole(string text)
 }
 static string executeLocalToolCall(AssistantToolCall call)
 {
-	if(call.Function.Name == DirectoryTreeTool.Name)
+	if(call.Function.Name == DirectoryTreeTool.name)
 	{
 		var arguments = JsonSerializer.Deserialize<GetDirectoryTreeArguments>(call.Function.Arguments, ChatJson.serializer);
 		if(arguments is null)
-			return "错误：get_directory_tree 参数无法解析。";
+			return"错误：get_directory_tree 参数无法解析。";
 		return DirectoryTreeTool.Invoke(arguments.Root, arguments.MaxDepth, arguments.Filter);
 	}
-	return $"错误：未实现的工具 {call.Function.Name}";
+	return$"错误：未实现的工具 {call.Function.Name}";
 }
 file static class OpenAiToolRegistration
 {
-	internal static readonly string DefinitionsJson = createDefinitionsJson();
-	static string createDefinitionsJson()
+	internal static readonly string definitionsJson = CreateDefinitionsJson();
+	static string CreateDefinitionsJson()
 	{
-		var parameters = JsonNode.Parse(DirectoryTreeTool.JsonSchemaParameters)!;
+		var parameters = JsonNode.Parse(DirectoryTreeTool.jsonSchemaParameters)!;
 		var function = new JsonObject
 		{
-			["name"] = DirectoryTreeTool.Name,
+			["name"] = DirectoryTreeTool.name,
 			["description"] = "读取本机目录树",
 			["parameters"] = parameters,
 		};
-		var tool = new JsonObject {["type"] = "function", ["function"] = function};
+		var tool = new JsonObject {["type"] = "function", ["function"] = function,};
 		return new JsonArray(tool).ToJsonString();
 	}
 }
@@ -533,10 +524,10 @@ file sealed record ChatCompletionTurnResult(
 	IReadOnlyList<AssistantToolCall>? ToolCalls);
 file sealed class StreamingToolCallAccumulator
 {
-	internal string? Id;
-	internal string? Type;
-	internal string? Name;
-	internal readonly StringBuilder ArgumentsBuilder = new();
+	internal readonly StringBuilder argumentsBuilder = new();
+	internal string? id;
+	internal string? type;
+	internal string? name;
 }
 file static class ChatJson
 {
