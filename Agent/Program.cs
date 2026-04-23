@@ -23,14 +23,19 @@ await using var prompt = new Prompt(
 while(true)
 {
 	var result = await prompt.ReadLineAsync();
-	if(result is null || !result.IsSuccess)
+	if(!result.IsSuccess)
 		break;
 	var trimmed = result.Text.Trim();
 	if(trimmed.Length == 0)
 		continue;
-	if(trimmed.StartsWith("/", StringComparison.Ordinal))
+	if(trimmed.StartsWith('/'))
 	{
-		if(!TryHandleSlash(trimmed, ref apiKey, ref model, ref baseUrl, messages))
+		if(!tryHandleSlash(
+			   trimmed,
+			   ref apiKey,
+			   ref model,
+			   ref baseUrl,
+			   messages))
 			break;
 		continue;
 	}
@@ -42,7 +47,7 @@ while(true)
 	messages.Add(new("user", trimmed));
 	try
 	{
-		var reply = await CompleteChatAsync(
+		var reply = await completeChatAsync(
 			httpClient,
 			baseUrl,
 			apiKey,
@@ -57,7 +62,8 @@ while(true)
 		Console.WriteLine($"请求失败：{ex.Message}");
 	}
 }
-static bool TryHandleSlash(
+return;
+static bool tryHandleSlash(
 	string trimmed,
 	ref string? apiKey,
 	ref string model,
@@ -65,8 +71,8 @@ static bool TryHandleSlash(
 	List<ChatMessage> messages)
 {
 	var spaceIndex = trimmed.IndexOf(' ');
-	var command = spaceIndex < 0 ? trimmed : trimmed[..spaceIndex];
-	var argument = spaceIndex < 0 ? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
+	var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
+	var argument = spaceIndex < 0? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
 	switch(command.ToLowerInvariant())
 	{
 		case"/help":
@@ -121,7 +127,7 @@ static bool TryHandleSlash(
 			return true;
 	}
 }
-static async Task<string> CompleteChatAsync(
+static async Task<string> completeChatAsync(
 	HttpClient httpClient,
 	string baseUrl,
 	string apiKey,
@@ -129,7 +135,7 @@ static async Task<string> CompleteChatAsync(
 	IReadOnlyList<ChatMessage> messages)
 {
 	var payload = new ChatCompletionRequest(model, messages.Select(static message => new ChatMessageDto(message.Role, message.Content)).ToList());
-	var json = JsonSerializer.Serialize(payload, ChatJson.Serializer);
+	var json = JsonSerializer.Serialize(payload, ChatJson.serializer);
 	var trimmedUrl = baseUrl.TrimEnd('/');
 	string endpoint;
 	if(trimmedUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
@@ -163,18 +169,20 @@ static async Task<string> CompleteChatAsync(
 	var content = messageElement.GetProperty("content").GetString() ?? string.Empty;
 	return content;
 }
-sealed record ChatMessage(string Role, string Content);
-sealed record ChatMessageDto(
+file sealed record ChatMessage(string Role, string Content);
+// ReSharper disable NotAccessedPositionalProperty.Local
+file sealed record ChatMessageDto(
 	[property: JsonPropertyName("role")]string Role,
 	[property: JsonPropertyName("content")]
 	string Content);
-sealed record ChatCompletionRequest(
+file sealed record ChatCompletionRequest(
 	[property: JsonPropertyName("model")]string Model,
 	[property: JsonPropertyName("messages")]
 	IReadOnlyList<ChatMessageDto> Messages);
+// ReSharper restore NotAccessedPositionalProperty.Local
 file static class ChatJson
 {
-	internal static readonly JsonSerializerOptions Serializer = new()
+	internal static readonly JsonSerializerOptions serializer = new()
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -182,7 +190,7 @@ file static class ChatJson
 }
 file sealed class SlashPromptCallbacks: PromptCallbacks
 {
-	static readonly CompletionItem[] SlashCompletionItems =
+	static readonly CompletionItem[] slashCompletionItems =
 	[
 		new SlashCompletionItem("/apikey ", "设置 API Key"),
 		new SlashCompletionItem("/model ", "设置模型 id"),
@@ -195,7 +203,7 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 	];
 	static int GetTokenStartIndex(string text, int caret)
 	{
-		var limit = caret > 0 ? caret - 1 : -1;
+		var limit = caret > 0? caret - 1 : -1;
 		for(var index = limit; index >= 0; index--)
 			if(text[index] is' ' or'\t')
 				return index + 1;
@@ -223,7 +231,15 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		var token = text.AsSpan(spanToBeReplaced);
 		if(token.Length == 0 || token[0] != '/')
 			return Task.FromResult<IReadOnlyList<CompletionItem>>(Array.Empty<CompletionItem>());
-		return Task.FromResult<IReadOnlyList<CompletionItem>>(SlashCompletionItems);
+		List<CompletionItem>? matches = null;
+		foreach(var item in slashCompletionItems)
+		{
+			if(item is not SlashCompletionItem slash || !slash.MatchesPrefix(token))
+				continue;
+			matches ??= new(slashCompletionItems.Length);
+			matches.Add(item);
+		}
+		return Task.FromResult(matches ?? (IReadOnlyList<CompletionItem>)Array.Empty<CompletionItem>());
 	}
 	protected override Task<bool> ShouldOpenCompletionWindowAsync(
 		string text,
@@ -237,29 +253,24 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		return Task.FromResult(tokenStart < text.Length && text[tokenStart] == '/');
 	}
 }
-file sealed class SlashCompletionItem: CompletionItem
+file sealed class SlashCompletionItem(string replacement, string caption): CompletionItem(
+	replacementText: replacement,
+	displayText: new($"{replacement.TrimEnd()} — {caption}"),
+	filterText: replacement.TrimEnd(),
+	// ReSharper disable once LambdaExpressionCanBeMadeStatic
+	getExtendedDescription: _ => Task.FromResult(new FormattedString(caption)))
 {
-	readonly string commandText;
-	public SlashCompletionItem(string replacement, string caption)
-		: base(
-			replacementText: replacement,
-			displayText: new($"{replacement.TrimEnd()} — {caption}"),
-			filterText: replacement.TrimEnd(),
-			getExtendedDescription: _ => Task.FromResult(new FormattedString(caption)))
-	{
-		commandText = replacement.TrimEnd();
-	}
+	readonly string commandText = replacement.TrimEnd();
 	public override int GetCompletionItemPriority(string text, int caret, TextSpan spanToBeReplaced)
 	{
 		if(spanToBeReplaced.IsEmpty)
 			return int.MinValue;
 		var pattern = text.AsSpan(spanToBeReplaced);
-		if(pattern.Length == 0 || pattern[0] != '/')
-			return int.MinValue;
-		if(!commandText.AsSpan().StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
+		if(pattern.Length == 0 || pattern[0] != '/' || !commandText.AsSpan().StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
 			return int.MinValue;
 		if(pattern.Length == commandText.Length)
 			return 1000;
 		return 500 + pattern.Length;
 	}
+	internal bool MatchesPrefix(ReadOnlySpan<char> prefix) { return commandText.AsSpan().StartsWith(prefix, StringComparison.OrdinalIgnoreCase); }
 }
