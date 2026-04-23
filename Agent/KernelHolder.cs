@@ -1,16 +1,16 @@
 using Microsoft.SemanticKernel;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
 namespace Agent;
 static class KernelHolder
 {
 	static Kernel? backingKernel;
-	public static Kernel Kernel => backingKernel
-		?? throw new InvalidOperationException("内部错误：尚未调用 KernelHolder.Build。");
-	public static void Build(HttpClient httpClient, Dictionary<string, SkillSummary> skillIndex)
+	public static Kernel Kernel
+		=> backingKernel
+			?? throw new InvalidOperationException("内部错误：尚未调用 KernelHolder.Build。");
+	public static void Build(HttpClient httpClient)
 	{
 		var baseText = UserChatSettings.BaseUrl.Trim();
 		var endpoint = baseText.Length == 0
-			? new Uri("https://api.openai.com/v1", UriKind.Absolute)
+			? new("https://api.openai.com/v1", UriKind.Absolute)
 			: new Uri(baseText, UriKind.Absolute);
 		var builder = Kernel.CreateBuilder();
 		builder.AddOpenAIChatCompletion(
@@ -21,6 +21,6 @@ static class KernelHolder
 			serviceId: null,
 			httpClient: httpClient);
 		backingKernel = builder.Build();
-		backingKernel.ImportPluginFromObject(new SkillLearningPlugin(skillIndex), "skills");
+		backingKernel.ImportPluginFromObject(new SkillLearningPlugin(SkillHolder.Index), "skills");
 	}
 }

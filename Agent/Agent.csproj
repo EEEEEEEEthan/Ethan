@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 
-
     <PropertyGroup>
 
         <OutputType>Exe</OutputType>
@@ -13,7 +12,6 @@
         <Nullable>enable</Nullable>
 
     </PropertyGroup>
-
 
 
     <!-- lib/PrettyPrompt：基于 waf/PrettyPrompt v4.1.1，SlidingArrayWindow.Match 剔除负优先级项；依赖与官方包一致 -->
@@ -47,10 +45,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Microsoft.SemanticKernel" Version="1.74.0" />
-      <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0" />
+        <PackageReference Include="Microsoft.SemanticKernel" Version="1.74.0"/>
+        <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0"/>
     </ItemGroup>
-
 
 
 </Project>

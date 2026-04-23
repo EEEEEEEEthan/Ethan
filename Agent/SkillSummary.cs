@@ -2,6 +2,16 @@
 namespace Agent;
 public sealed record SkillSummary(string Id, string Description, string Path)
 {
+	public static IEnumerable<string> DefaultSkillRepositoryRoots
+	{
+		get
+		{
+			var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+			if(string.IsNullOrEmpty(userProfile))
+				yield break;
+			yield return System.IO.Path.Combine(userProfile, ".cursor", "skills");
+		}
+	}
 	public static string BuildAgentSystemPrompt(IReadOnlyDictionary<string, SkillSummary> index)
 	{
 		var builder = new StringBuilder();
@@ -12,13 +22,6 @@ public sealed record SkillSummary(string Id, string Description, string Path)
 		builder.AppendLine(
 			"工具 learn_skill(skill_id, relative_path?)：relative_path 为相对技能根目录的文件路径；不传时读取 SKILL.md 全文，并附带该技能目录下相对路径列表；传入路径时只返回该文件的完整 UTF-8 文本。");
 		return builder.ToString();
-	}
-	public static IEnumerable<string> DefaultSkillRepositoryRoots()
-	{
-		var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-		if(string.IsNullOrEmpty(userProfile))
-			yield break;
-		yield return System.IO.Path.Combine(userProfile, ".cursor", "skills");
 	}
 	public static Dictionary<string, SkillSummary> BuildIndex(IEnumerable<string> skillRepositoryRoots)
 	{

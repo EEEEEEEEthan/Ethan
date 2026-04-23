@@ -1,4 +1,3 @@
-using Microsoft.SemanticKernel.ChatCompletion;
 using PrettyPrompt;
 using PrettyPrompt.Completion;
 using PrettyPrompt.Consoles;
@@ -10,7 +9,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 	const string completeApikey = "/apikey ";
 	const string completeModel = "/model ";
 	const string completeUrl = "/url ";
-	const string completeClear = "/clear";
+	const string completeNew = "/new ";
 	const string completeUpdateSkills = "/update-skills";
 	const string completeHelp = "/help";
 	const string completeQ = "/?";
@@ -19,7 +18,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 	const string captionApikey = "设置 API Key";
 	const string captionModel = "设置模型 id";
 	const string captionUrl = "OpenAI 兼容根地址";
-	const string captionClear = "清空对话上下文";
+	const string captionNew = "开始新对话（保留技能列表）";
 	const string captionUpdateSkills = "重建技能索引";
 	const string captionHelp = "指令说明";
 	const string captionQ = "同 /help";
@@ -30,20 +29,15 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 		new SlashCompletionItem(completeApikey, captionApikey),
 		new SlashCompletionItem(completeModel, captionModel),
 		new SlashCompletionItem(completeUrl, captionUrl),
-		new SlashCompletionItem(completeClear, captionClear),
+		new SlashCompletionItem(completeNew, captionNew),
 		new SlashCompletionItem(completeUpdateSkills, captionUpdateSkills),
 		new SlashCompletionItem(completeHelp, captionHelp),
 		new SlashCompletionItem(completeQ, captionQ),
 		new SlashCompletionItem(completeExit, captionExit),
 		new SlashCompletionItem(completeQuit, captionQuit),
 	];
-	public static bool TryHandleLine(
-		string trimmed,
-		Dictionary<string, SkillSummary> skillIndex,
-		ChatHistory conversation,
-		out bool connectionSettingsTouched)
+	public static bool TryHandleLine(string trimmed, HttpClient httpClient)
 	{
-		connectionSettingsTouched = false;
 		var spaceIndex = trimmed.IndexOf(' ');
 		var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
 		var argument = spaceIndex < 0? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
@@ -59,7 +53,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					                   火山方舟填 https://ark.cn-beijing.volces.com/api/v3（勿用 /responses），请求 …/api/v3/chat/completions
 					                   若已含完整路径 …/chat/completions 则原样使用
 					环境变量 OPENAI_* 若已设置则优先于配置文件
-					/clear             清空本轮对话上下文
+					/new               开始新对话（仅保留技能系统消息）
 					/update-skills     重新扫描 .cursor/skills 与 skills-cursor 并建立技能索引
 					/exit 或 /quit     退出
 					""");
@@ -71,8 +65,8 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					return true;
 				}
 				UserChatSettings.ApiKey = argument;
-				connectionSettingsTouched = true;
 				UserChatSettings.Persist();
+				KernelHolder.Build(httpClient);
 				Console.WriteLine("已设置 API Key 并已保存。");
 				return true;
 			case"/model":
@@ -82,8 +76,8 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					return true;
 				}
 				UserChatSettings.Model = argument;
-				connectionSettingsTouched = true;
 				UserChatSettings.Persist();
+				KernelHolder.Build(httpClient);
 				Console.WriteLine($"已设置模型：{UserChatSettings.Model}（已保存）");
 				return true;
 			case"/url":
@@ -93,23 +87,19 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					return true;
 				}
 				UserChatSettings.BaseUrl = argument.TrimEnd('/');
-				connectionSettingsTouched = true;
 				UserChatSettings.Persist();
+				KernelHolder.Build(httpClient);
 				Console.WriteLine($"已设置基础地址：{UserChatSettings.BaseUrl}（已保存）");
 				return true;
-			case"/clear":
-				conversation.Clear();
-				Console.WriteLine("已清空对话。");
+			case"/new":
+				HistoryHolder.New();
+				Console.WriteLine("已开始新对话。");
 				return true;
 			case"/update-skills":
-			{
-				var rebuilt = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
-				skillIndex.Clear();
-				foreach(var pair in rebuilt)
-					skillIndex[pair.Key] = pair.Value;
-				Console.WriteLine($"已重建技能索引：{skillIndex.Count} 条。");
+				SkillHolder.Build();
+				KernelHolder.Build(httpClient);
+				Console.WriteLine($"已重建技能索引：{SkillHolder.Index.Count} 条。");
 				return true;
-			}
 			case"/exit":
 			case"/quit":
 				return false;

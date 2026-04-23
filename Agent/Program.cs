@@ -8,12 +8,12 @@ file static class Program
 {
 	static async Task Main()
 	{
-		ChatHistory conversation = [];
 		var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 		Console.OutputEncoding = Encoding.UTF8;
-		var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
-		Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
-		KernelHolder.Build(httpClient, skillIndex);
+		SkillHolder.Build();
+		Console.WriteLine($"已建立技能索引：{SkillHolder.Index.Count} 条。");
+		HistoryHolder.New();
+		KernelHolder.Build(httpClient);
 		Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 		if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 			Console.WriteLine(
@@ -33,14 +33,8 @@ file static class Program
 				continue;
 			if(trimmed.StartsWith('/'))
 			{
-				if(!SlashPromptCallbacks.TryHandleLine(
-					   trimmed,
-					   skillIndex,
-					   conversation,
-					   out var connectionSettingsTouched))
+				if(!SlashPromptCallbacks.TryHandleLine(trimmed, httpClient))
 					break;
-				if(connectionSettingsTouched)
-					KernelHolder.Build(httpClient, skillIndex);
 				continue;
 			}
 			if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
@@ -49,21 +43,17 @@ file static class Program
 				continue;
 			}
 			var currentKernel = KernelHolder.Kernel;
-			var turnStartCount = conversation.Count;
-			conversation.AddUserMessage(trimmed);
+			var turnStartCount = HistoryHolder.History.Count;
+			HistoryHolder.History.AddUserMessage(trimmed);
 			try
 			{
 				var chat = currentKernel.GetRequiredService<IChatCompletionService>();
-				await RunStreamingChatTurnAsync(
-					currentKernel,
-					chat,
-					conversation,
-					skillIndex);
+				await RunStreamingChatTurnAsync(currentKernel, chat);
 			}
 			catch(Exception exception)
 			{
-				while(conversation.Count > turnStartCount)
-					conversation.RemoveAt(conversation.Count - 1);
+				while(HistoryHolder.History.Count > turnStartCount)
+					HistoryHolder.History.RemoveAt(HistoryHolder.History.Count - 1);
 				Console.WriteLine($"请求失败：{exception.Message}");
 			}
 		}
@@ -76,19 +66,15 @@ file static class Program
 			chatHistory.RemoveAt(0);
 		chatHistory.Insert(0, new(AuthorRole.System, SkillSummary.BuildAgentSystemPrompt(index)));
 	}
-	static async Task RunStreamingChatTurnAsync(
-		Kernel kernel,
-		IChatCompletionService chatCompletion,
-		ChatHistory conversation,
-		Dictionary<string, SkillSummary> skillIndex)
+	static async Task RunStreamingChatTurnAsync(Kernel kernel, IChatCompletionService chatCompletion)
 	{
-		RefreshSkillSystemMessage(conversation, skillIndex);
+		RefreshSkillSystemMessage(HistoryHolder.History, SkillHolder.Index);
 		var execution = new OpenAIPromptExecutionSettings
 			{ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,};
 		var textBuffer = new StringBuilder();
 		var streamPendingCarriageReturn = false;
 		var streaming = chatCompletion.GetStreamingChatMessageContentsAsync(
-			chatHistory: conversation,
+			chatHistory: HistoryHolder.History,
 			executionSettings: execution,
 			kernel: kernel);
 		await foreach(var part in streaming.ConfigureAwait(false))
@@ -97,63 +83,65 @@ file static class Program
 			if(string.IsNullOrEmpty(textChunk))
 				continue;
 			textBuffer.Append(textChunk);
-			var formatted = FormatTextForWindowsConsolePiece(textChunk, ref streamPendingCarriageReturn);
+			var formatted = formatTextForWindowsConsolePiece(textChunk, ref streamPendingCarriageReturn);
 			if(formatted.Length != 0)
 			{
 				Console.Write(formatted);
 				await Console.Out.FlushAsync().ConfigureAwait(false);
 			}
 		}
-		var trailingNewline = FormatTextForWindowsConsolePiece(string.Empty, ref streamPendingCarriageReturn);
+		var trailingNewline = formatTextForWindowsConsolePiece(string.Empty, ref streamPendingCarriageReturn);
 		if(trailingNewline.Length != 0)
 			Console.Write(trailingNewline);
 		await Console.Out.FlushAsync().ConfigureAwait(false);
 		Console.WriteLine();
-	}
-	static string FormatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
-	{
-		if(segment.Length == 0)
-			return string.Empty;
-		if(Environment.NewLine is not"\r\n" || (!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0))
-			return segment;
-		var builder = new StringBuilder(segment.Length + 4);
-		if(pendingCarriageReturn)
+		return;
+		static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
 		{
-			pendingCarriageReturn = false;
-			if(segment[0] == '\n')
+			if(segment.Length == 0)
+				return string.Empty;
+			if(Environment.NewLine is not"\r\n"
+			   || (!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0))
+				return segment;
+			var builder = new StringBuilder(segment.Length + 4);
+			if(pendingCarriageReturn)
 			{
-				builder.Append("\r\n");
-				segment = segment[1..];
-			}
-			else
-				builder.Append('\r');
-		}
-		if(segment.Length == 0)
-			return builder.ToString();
-		for(var index = 0; index < segment.Length; index++)
-		{
-			var character = segment[index];
-			switch(character)
-			{
-				case'\r':
-					if(index + 1 < segment.Length && segment[index + 1] == '\n')
-					{
-						builder.Append("\r\n");
-						index++;
-					}
-					else if(index == segment.Length - 1)
-						pendingCarriageReturn = true;
-					else
-						builder.Append('\r');
-					break;
-				case'\n':
+				pendingCarriageReturn = false;
+				if(segment[0] == '\n')
+				{
 					builder.Append("\r\n");
-					break;
-				default:
-					builder.Append(character);
-					break;
+					segment = segment[1..];
+				}
+				else
+					builder.Append('\r');
 			}
+			if(segment.Length == 0)
+				return builder.ToString();
+			for(var index = 0; index < segment.Length; index++)
+			{
+				var character = segment[index];
+				switch(character)
+				{
+					case'\r':
+						if(index + 1 < segment.Length && segment[index + 1] == '\n')
+						{
+							builder.Append("\r\n");
+							index++;
+						}
+						else if(index == segment.Length - 1)
+							pendingCarriageReturn = true;
+						else
+							builder.Append('\r');
+						break;
+					case'\n':
+						builder.Append("\r\n");
+						break;
+					default:
+						builder.Append(character);
+						break;
+				}
+			}
+			return builder.ToString();
 		}
-		return builder.ToString();
 	}
 }
