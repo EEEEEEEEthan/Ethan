@@ -94,8 +94,15 @@ while(true)
 						turn.ToolCalls));
 				foreach(var call in turn.ToolCalls)
 				{
-					var toolText = executeLocalToolCall(call);
-					messages.Add(new("tool", toolText, null, call.Id));
+					var header = $"[工具调用] {call.Function.Name} 参数：{call.Function.Arguments}";
+					Console.WriteLine(header);
+					Console.Out.Flush();
+					var toolBody = executeLocalToolCall(call);
+					Console.WriteLine("[工具输出]");
+					Console.Out.Flush();
+					writeStreamingConsole(toolBody);
+					var toolMessageContent = $"{header}\n\n{toolBody}";
+					messages.Add(new("tool", toolMessageContent, null, call.Id));
 				}
 				continue;
 			}
@@ -103,7 +110,6 @@ while(true)
 				throw new InvalidOperationException("响应为 tool_calls 但未包含任何 tool_call。");
 			var finalText = turn.AssistantText ?? string.Empty;
 			messages.Add(new("assistant", finalText));
-			Console.WriteLine(finalText);
 			conversationFinished = true;
 			break;
 		}
@@ -225,63 +231,148 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 		["messages"] = buildOpenAiMessagesArray(conversation),
 		["tools"] = JsonNode.Parse(OpenAiToolRegistration.DefinitionsJson)!,
 		["tool_choice"] = "auto",
+		["stream"] = true,
 	};
 	var json = payload.ToJsonString();
 	using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
 	request.Headers.Authorization = new("Bearer", apiKey);
 	request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-	using var response = await httpClient.SendAsync(request);
-	var body = await response.Content.ReadAsStringAsync();
+	using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 	if(!response.IsSuccessStatusCode)
-		throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}: {body}");
-	using var document = JsonDocument.Parse(body);
-	var root = document.RootElement;
-	if(!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-		throw new InvalidOperationException($"响应无 choices：{body}");
-	var first = choices[0];
-	if(!first.TryGetProperty("message", out var messageElement))
-		throw new InvalidOperationException($"响应缺少 message：{body}");
-	var finishReason = first.TryGetProperty("finish_reason", out var finishElement)
-		? finishElement.GetString() ?? "stop"
-		: "stop";
-	string? assistantText = null;
-	if(messageElement.TryGetProperty("content", out var contentElement)
-	   && contentElement.ValueKind is JsonValueKind.String)
-		assistantText = contentElement.GetString();
-	IReadOnlyList<AssistantToolCall>? toolCalls = null;
-	if(messageElement.TryGetProperty("tool_calls", out var toolCallsElement)
-	   && toolCallsElement.ValueKind == JsonValueKind.Array
-	   && toolCallsElement.GetArrayLength() > 0)
 	{
-		var parsedCalls = new List<AssistantToolCall>();
-		foreach(var callElement in toolCallsElement.EnumerateArray())
+		var errorBody = await response.Content.ReadAsStringAsync();
+		throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}: {errorBody}");
+	}
+	await using var bodyStream = await response.Content.ReadAsStreamAsync();
+	using var lineReader = new StreamReader(bodyStream, Encoding.UTF8);
+	var contentBuilder = new StringBuilder();
+	var toolCallAccumulators = new Dictionary<int, StreamingToolCallAccumulator>();
+	string? finishReason = null;
+	while(!lineReader.EndOfStream)
+	{
+		var line = await lineReader.ReadLineAsync();
+		if(string.IsNullOrWhiteSpace(line))
+			continue;
+		if(!line.StartsWith("data:", StringComparison.Ordinal))
+			continue;
+		var data = line["data:".Length..].TrimStart();
+		if(data == "[DONE]")
+			break;
+		JsonDocument chunk;
+		try
 		{
-			if(!callElement.TryGetProperty("id", out var idElement))
+			chunk = JsonDocument.Parse(data);
+		}
+		catch(JsonException)
+		{
+			continue;
+		}
+		using(chunk)
+		{
+			var root = chunk.RootElement;
+			if(root.TryGetProperty("error", out var errorElement))
+			{
+				var message = errorElement.TryGetProperty("message", out var messageElement)
+					? messageElement.GetString()
+					: errorElement.GetRawText();
+				throw new InvalidOperationException($"流式响应错误：{message}");
+			}
+			if(!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
 				continue;
-			var callId = idElement.GetString();
-			if(string.IsNullOrEmpty(callId))
+			var first = choices[0];
+			if(first.TryGetProperty("finish_reason", out var finishElement)
+			   && finishElement.ValueKind is JsonValueKind.String)
+			{
+				var reason = finishElement.GetString();
+				if(!string.IsNullOrEmpty(reason))
+					finishReason = reason;
+			}
+			if(!first.TryGetProperty("delta", out var delta))
 				continue;
-			var callType = callElement.TryGetProperty("type", out var typeElement)
-				? typeElement.GetString() ?? "function"
-				: "function";
-			if(!callElement.TryGetProperty("function", out var functionElement))
+			if(delta.TryGetProperty("content", out var deltaContent)
+			   && deltaContent.ValueKind is JsonValueKind.String)
+			{
+				var piece = deltaContent.GetString();
+				if(!string.IsNullOrEmpty(piece))
+				{
+					contentBuilder.Append(piece);
+					Console.Write(piece);
+					Console.Out.Flush();
+				}
+			}
+			if(delta.TryGetProperty("tool_calls", out var deltaToolCalls)
+			   && deltaToolCalls.ValueKind == JsonValueKind.Array)
+			{
+				foreach(var callDelta in deltaToolCalls.EnumerateArray())
+					mergeStreamingToolCallDelta(toolCallAccumulators, callDelta);
+			}
+		}
+	}
+	Console.WriteLine();
+	Console.Out.Flush();
+	var assistantText = contentBuilder.Length > 0? contentBuilder.ToString() : null;
+	IReadOnlyList<AssistantToolCall>? toolCalls = null;
+	if(toolCallAccumulators.Count > 0)
+	{
+		var ordered = toolCallAccumulators
+			.OrderBy(static indexAndAccumulator => indexAndAccumulator.Key)
+			.Select(static indexAndAccumulator => indexAndAccumulator.Value)
+			.ToList();
+		var parsedCalls = new List<AssistantToolCall>();
+		foreach(var accumulator in ordered)
+		{
+			if(string.IsNullOrEmpty(accumulator.Id))
 				continue;
-			var functionName = functionElement.TryGetProperty("name", out var nameElement)
-				? nameElement.GetString() ?? string.Empty
-				: string.Empty;
-			var arguments = functionElement.TryGetProperty("arguments", out var argumentsElement)
-				? argumentsElement.GetString() ?? "{}"
-				: "{}";
-			parsedCalls.Add(
-				new(
-					callId,
-					callType,
-					new AssistantToolFunction(functionName, arguments)));
+			var callType = string.IsNullOrEmpty(accumulator.Type)? "function" : accumulator.Type;
+			var functionName = accumulator.Name ?? string.Empty;
+			var arguments = accumulator.ArgumentsBuilder.Length > 0? accumulator.ArgumentsBuilder.ToString() : "{}";
+			parsedCalls.Add(new(accumulator.Id!, callType, new AssistantToolFunction(functionName, arguments)));
 		}
 		if(parsedCalls.Count > 0)
 			toolCalls = parsedCalls;
 	}
-	return new(finishReason, assistantText, toolCalls);
+	return new(finishReason ?? "stop", assistantText, toolCalls);
+}
+static void mergeStreamingToolCallDelta(
+	Dictionary<int, StreamingToolCallAccumulator> accumulators,
+	JsonElement callDelta)
+{
+	if(!callDelta.TryGetProperty("index", out var indexElement)
+	   || indexElement.ValueKind is not JsonValueKind.Number)
+		return;
+	var index = indexElement.GetInt32();
+	if(!accumulators.TryGetValue(index, out var accumulator))
+	{
+		accumulator = new();
+		accumulators[index] = accumulator;
+	}
+	if(callDelta.TryGetProperty("id", out var idElement) && idElement.ValueKind is JsonValueKind.String)
+	{
+		var id = idElement.GetString();
+		if(!string.IsNullOrEmpty(id))
+			accumulator.Id = id;
+	}
+	if(callDelta.TryGetProperty("type", out var typeElement) && typeElement.ValueKind is JsonValueKind.String)
+	{
+		var type = typeElement.GetString();
+		if(!string.IsNullOrEmpty(type))
+			accumulator.Type = type;
+	}
+	if(!callDelta.TryGetProperty("function", out var functionDelta))
+		return;
+	if(functionDelta.TryGetProperty("name", out var nameElement) && nameElement.ValueKind is JsonValueKind.String)
+	{
+		var name = nameElement.GetString();
+		if(!string.IsNullOrEmpty(name))
+			accumulator.Name = name;
+	}
+	if(functionDelta.TryGetProperty("arguments", out var argumentsElement)
+	   && argumentsElement.ValueKind is JsonValueKind.String)
+	{
+		var argumentsPiece = argumentsElement.GetString();
+		if(!string.IsNullOrEmpty(argumentsPiece))
+			accumulator.ArgumentsBuilder.Append(argumentsPiece);
+	}
 }
 static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> conversation)
 {
@@ -328,6 +419,16 @@ static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> co
 	}
 	return messagesArray;
 }
+static void writeStreamingConsole(string text)
+{
+	const int chunkSize = 4096;
+	for(var offset = 0; offset < text.Length; offset += chunkSize)
+	{
+		var length = Math.Min(chunkSize, text.Length - offset);
+		Console.Out.Write(text.AsSpan(offset, length));
+		Console.Out.Flush();
+	}
+}
 static string executeLocalToolCall(AssistantToolCall call)
 {
 	if(call.Function.Name == DirectoryTreeTool.Name)
@@ -371,6 +472,13 @@ file sealed record ChatCompletionTurnResult(
 	string FinishReason,
 	string? AssistantText,
 	IReadOnlyList<AssistantToolCall>? ToolCalls);
+file sealed class StreamingToolCallAccumulator
+{
+	internal string? Id;
+	internal string? Type;
+	internal string? Name;
+	internal readonly StringBuilder ArgumentsBuilder = new();
+}
 file static class ChatJson
 {
 	internal static readonly JsonSerializerOptions serializer = new()
