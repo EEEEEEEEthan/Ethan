@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Agent;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
@@ -44,6 +45,8 @@ if(!string.IsNullOrEmpty(environmentModel))
 if(!string.IsNullOrEmpty(environmentBaseUrl))
 	baseUrl = environmentBaseUrl.TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
+var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
+Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 if(string.IsNullOrWhiteSpace(apiKey))
 	Console.WriteLine(
@@ -71,6 +74,7 @@ while(true)
 			   ref apiKey,
 			   ref model,
 			   ref baseUrl,
+			   ref skillIndex,
 			   messages,
 			   out var connectionSettingsTouched))
 			break;
@@ -197,6 +201,7 @@ static bool tryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
+	ref Dictionary<string, SkillSummary> skillIndex,
 	List<PersistedChatMessage> messages,
 	out bool connectionSettingsTouched)
 {
@@ -226,6 +231,7 @@ static bool tryHandleSlash(
 				                   若已含完整路径 …/chat/completions 则原样使用
 				环境变量 OPENAI_* 若已设置则优先于配置文件
 				/clear             清空本轮对话上下文
+				/update-skills     重新扫描 .cursor/skills 与 skills-cursor 并建立技能索引
 				/exit 或 /quit     退出
 				""");
 			return true;
@@ -265,6 +271,10 @@ static bool tryHandleSlash(
 		case"/clear":
 			messages.Clear();
 			Console.WriteLine("已清空对话。");
+			return true;
+		case"/update-skills":
+			skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
+			Console.WriteLine($"已重建技能索引：{skillIndex.Count} 条。");
 			return true;
 		case"/exit":
 		case"/quit":
@@ -357,6 +367,7 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		new SlashCompletionItem("/model ", "设置模型 id"),
 		new SlashCompletionItem("/url ", "OpenAI 兼容根地址"),
 		new SlashCompletionItem("/clear", "清空对话上下文"),
+		new SlashCompletionItem("/update-skills", "重建技能索引"),
 		new SlashCompletionItem("/help", "指令说明"),
 		new SlashCompletionItem("/?", "同 /help"),
 		new SlashCompletionItem("/exit", "退出"),
