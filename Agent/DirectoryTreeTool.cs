@@ -62,8 +62,7 @@ internal static class DirectoryTreeTool
 					builder.AppendLine("... 已截断（超过 3000 行）");
 					return builder.ToString();
 				}
-				var isLast = index == rootNode.Children.Count - 1;
-				rootNode.Children[index].AppendLines(builder, string.Empty, isLast, maxLines, ref linesUsed, out truncated);
+				rootNode.Children[index].AppendLines(builder, 1, maxLines, ref linesUsed, out truncated);
 				if(truncated)
 				{
 					builder.AppendLine("... 已截断（超过 3000 行）");
@@ -163,8 +162,7 @@ internal static class DirectoryTreeTool
 
 		public void AppendLines(
 			StringBuilder builder,
-			string prefix,
-			bool isLast,
+			int depth,
 			int maxLines,
 			ref int linesUsed,
 			out bool truncated)
@@ -175,8 +173,7 @@ internal static class DirectoryTreeTool
 				truncated = true;
 				return;
 			}
-			var connector = isLast? "└── " : "├── ";
-			builder.Append(prefix).Append(connector).Append(Name);
+			builder.Append(' ', depth).Append(Name);
 			if(IsDirectory)
 				builder.Append(Path.DirectorySeparatorChar);
 			builder.AppendLine();
@@ -186,11 +183,9 @@ internal static class DirectoryTreeTool
 				truncated = true;
 				return;
 			}
-			var childPrefix = prefix + (isLast? "    " : "│   ");
 			for(var index = 0; index < Children.Count; index++)
 			{
-				var last = index == Children.Count - 1;
-				Children[index].AppendLines(builder, childPrefix, last, maxLines, ref linesUsed, out truncated);
+				Children[index].AppendLines(builder, depth + 1, maxLines, ref linesUsed, out truncated);
 				if(truncated)
 					return;
 			}

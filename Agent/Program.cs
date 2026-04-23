@@ -449,7 +449,7 @@ file static class OpenAiToolRegistration
 		var function = new JsonObject
 		{
 			["name"] = DirectoryTreeTool.Name,
-			["description"] = "读取本机目录树。filter 为名称通配（* ?），省略或 * 表示全部；不匹配的项会裁掉，仅保留通向匹配项的祖先目录。",
+			["description"] = "读取本机目录树",
 			["parameters"] = parameters,
 		};
 		var tool = new JsonObject {["type"] = "function", ["function"] = function};
