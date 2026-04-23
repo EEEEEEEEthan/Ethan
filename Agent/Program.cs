@@ -87,7 +87,46 @@ while(true)
 		continue;
 	}
 	if(lastKernelConfig is null || !lastKernelConfig.MatchesCurrent(apiKey, model, baseUrl) || activeKernel is null)
-		(activeKernel, lastKernelConfig) = buildKernelState(httpClient, apiKey, model, baseUrl);
+	{
+		Uri endpoint;
+		var working = baseUrl.TrimEnd('/');
+		if(working.Length == 0)
+			endpoint = new("https://api.openai.com/v1", UriKind.Absolute);
+		else
+		{
+			if(working.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)
+			   && working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
+			   && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
+				working = working[..^"/responses".Length].TrimEnd('/');
+			if(working.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
+				endpoint = new(working[..^"/chat/completions".Length], UriKind.Absolute);
+			else if(working.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+				endpoint = new(working[..^"/chat/completions".Length], UriKind.Absolute);
+			else if(working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
+			        && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
+				endpoint = new(working, UriKind.Absolute);
+			else if(working.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+				endpoint = new(working, UriKind.Absolute);
+			else if(Uri.TryCreate(working, UriKind.Absolute, out var openAiCheck)
+			        && string.Equals(openAiCheck.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
+			        && (string.IsNullOrEmpty(openAiCheck.AbsolutePath) || openAiCheck.AbsolutePath == "/"))
+				endpoint = new("https://api.openai.com/v1", UriKind.Absolute);
+			else if(Uri.TryCreate(working + "/v1", UriKind.Absolute, out var withV1))
+				endpoint = withV1;
+			else
+				endpoint = new(working, UriKind.Absolute);
+		}
+		var builder = Kernel.CreateBuilder();
+		builder.AddOpenAIChatCompletion(
+			modelId: model,
+			endpoint: endpoint,
+			apiKey: apiKey,
+			orgId: null,
+			serviceId: null,
+			httpClient: httpClient);
+		activeKernel = builder.Build();
+		lastKernelConfig = new(apiKey, model, baseUrl);
+	}
 	var currentKernel = activeKernel
 		?? throw new InvalidOperationException("内部错误：Kernel 未初始化。");
 	var turnStartIndex = messages.Count;
@@ -109,56 +148,22 @@ while(true)
 	}
 }
 return;
-static (Kernel kernel, KernelConfigSnapshot snapshot) buildKernelState(
-	HttpClient sharedHttp,
-	string apiKeyValue,
-	string modelId,
-	string userBaseUrl)
-{
-	var builder = Kernel.CreateBuilder();
-	var endpoint = resolveOpenAiServiceEndpointForKernel(userBaseUrl);
-	builder.AddOpenAIChatCompletion(
-		modelId: modelId,
-		endpoint: endpoint,
-		apiKey: apiKeyValue,
-		orgId: null,
-		serviceId: null,
-		httpClient: sharedHttp);
-	var kernel = builder.Build();
-	return(kernel, new(apiKeyValue, modelId, userBaseUrl));
-}
-static Uri resolveOpenAiServiceEndpointForKernel(string userBase)
-{
-	var trimmed = userBase.TrimEnd('/');
-	if(trimmed.Length == 0)
-		return new("https://api.openai.com/v1", UriKind.Absolute);
-	if(trimmed.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)
-	   && trimmed.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-	   && trimmed.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-		trimmed = trimmed[..^"/responses".Length].TrimEnd('/');
-	if(trimmed.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
-		return new(trimmed[..^"/chat/completions".Length], UriKind.Absolute);
-	if(trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-		return new(trimmed[..^"/chat/completions".Length], UriKind.Absolute);
-	if(trimmed.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-	   && trimmed.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-		return new(trimmed, UriKind.Absolute);
-	if(trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-		return new(trimmed, UriKind.Absolute);
-	if(Uri.TryCreate(trimmed, UriKind.Absolute, out var openAiCheck)
-	   && string.Equals(openAiCheck.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
-	   && (string.IsNullOrEmpty(openAiCheck.AbsolutePath) || openAiCheck.AbsolutePath == "/"))
-		return new("https://api.openai.com/v1", UriKind.Absolute);
-	if(Uri.TryCreate(trimmed + "/v1", UriKind.Absolute, out var withV1))
-		return withV1;
-	return new(trimmed, UriKind.Absolute);
-}
 static async Task<string?> runStreamingChatTurnAsync(
 	Kernel kernel,
 	IChatCompletionService chatCompletion,
 	IReadOnlyList<PersistedChatMessage> conversation)
 {
-	var history = toChatHistory(conversation);
+	var history = new ChatHistory();
+	foreach(var item in conversation)
+		switch(item.Role)
+		{
+			case"user":
+				history.AddUserMessage(item.Content ?? string.Empty);
+				break;
+			case"assistant":
+				history.AddAssistantMessage(item.Content ?? string.Empty);
+				break;
+		}
 	var execution = new OpenAIPromptExecutionSettings();
 	var textBuffer = new StringBuilder();
 	var streamPendingCarriageReturn = false;
@@ -186,21 +191,6 @@ static async Task<string?> runStreamingChatTurnAsync(
 	Console.WriteLine();
 	return textBuffer.Length > 0? textBuffer.ToString() : null;
 }
-static ChatHistory toChatHistory(IReadOnlyList<PersistedChatMessage> items)
-{
-	var history = new ChatHistory();
-	foreach(var item in items)
-		switch(item.Role)
-		{
-			case"user":
-				history.AddUserMessage(item.Content ?? string.Empty);
-				break;
-			case"assistant":
-				history.AddAssistantMessage(item.Content ?? string.Empty);
-				break;
-		}
-	return history;
-}
 static bool tryHandleSlash(
 	string trimmed,
 	string userSettingsFilepath,
@@ -210,6 +200,15 @@ static bool tryHandleSlash(
 	List<PersistedChatMessage> messages,
 	out bool connectionSettingsTouched)
 {
+	static void save(string filepath, string? apiKeyValue, string modelId, string userBase)
+	{
+		var parentDirectory = Path.GetDirectoryName(filepath);
+		if(!string.IsNullOrEmpty(parentDirectory))
+			Directory.CreateDirectory(parentDirectory);
+		var payload = new UserChatSettings(apiKeyValue, userBase.TrimEnd('/'), modelId);
+		var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
+		File.WriteAllText(filepath, jsonText);
+	}
 	connectionSettingsTouched = false;
 	var spaceIndex = trimmed.IndexOf(' ');
 	var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
@@ -238,7 +237,7 @@ static bool tryHandleSlash(
 			}
 			apiKey = argument;
 			connectionSettingsTouched = true;
-			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			save(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine("已设置 API Key 并已保存。");
 			return true;
 		case"/model":
@@ -249,7 +248,7 @@ static bool tryHandleSlash(
 			}
 			model = argument;
 			connectionSettingsTouched = true;
-			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			save(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine($"已设置模型：{model}（已保存）");
 			return true;
 		case"/url":
@@ -260,7 +259,7 @@ static bool tryHandleSlash(
 			}
 			baseUrl = argument.TrimEnd('/');
 			connectionSettingsTouched = true;
-			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			save(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine($"已设置基础地址：{baseUrl}（已保存）");
 			return true;
 		case"/clear":
@@ -274,15 +273,6 @@ static bool tryHandleSlash(
 			Console.WriteLine($"未知指令：{command}，输入 /help 查看列表。");
 			return true;
 	}
-}
-static void saveUserChatSettings(string filepath, string? apiKeyValue, string modelId, string userBase)
-{
-	var parentDirectory = Path.GetDirectoryName(filepath);
-	if(!string.IsNullOrEmpty(parentDirectory))
-		Directory.CreateDirectory(parentDirectory);
-	var payload = new UserChatSettings(apiKeyValue, userBase.TrimEnd('/'), modelId);
-	var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
-	File.WriteAllText(filepath, jsonText);
 }
 static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
 {
