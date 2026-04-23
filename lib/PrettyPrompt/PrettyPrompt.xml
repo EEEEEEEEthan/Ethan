@@ -1,0 +1,937 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>PrettyPrompt</name>
+    </assembly>
+    <members>
+        <member name="T:PrettyPrompt.Completion.CompletionItem">
+            <summary>
+            A menu item in the Completion Menu Pane.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Completion.CompletionItem.ReplacementText">
+            <summary>
+            When the completion item is selected, this text will be inserted into the document at the specified start index.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Completion.CompletionItem.DisplayTextFormatted">
+            <summary>
+            This text will be displayed in the completion menu.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Completion.CompletionItem.DisplayText">
+            <summary>
+            This text will be displayed in the completion menu.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Completion.CompletionItem.FilterText">
+            <summary>
+            The text used to determine if the item matches the filter in the list.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Completion.CompletionItem.CommitCharacterRules">
+            <summary>
+            Rules that modify the set of characters that can be typed to cause the selected item to be committed.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Completion.CompletionItem.GetExtendedDescriptionAsync(System.Threading.CancellationToken)">
+            <summary>
+            This task will be executed when the item is selected, to display the extended "tool tip" description to the right of the menu.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Completion.CompletionItem.#ctor(System.String,PrettyPrompt.Highlighting.FormattedString,System.String,PrettyPrompt.Completion.CompletionItem.GetExtendedDescriptionHandler,System.Collections.Immutable.ImmutableArray{PrettyPrompt.Consoles.CharacterSetModificationRule})">
+            <param name="replacementText">When the completion item is selected, this text will be inserted into the document at the specified start index.</param>
+            <param name="displayText">This text will be displayed in the completion menu. If not specified, the <paramref name="replacementText"/> value will be used.</param>
+            <param name="getExtendedDescription">This lazy task will be executed when the item is selected, to display the extended "tool tip" description to the right of the menu.</param>
+            <param name="filterText">The text used to determine if the item matches the filter in the list. If not specified the <paramref name="replacementText"/> value is used.</param>
+            <param name="commitCharacterRules">Rules that modify the set of characters that can be typed to cause the selected item to be committed.</param>
+        </member>
+        <member name="M:PrettyPrompt.Completion.CompletionItem.GetCompletionItemPriority(System.String,System.Int32,PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Determines the completion item priority in completion list with respect to currently written text.
+            Higher numbers represent higher priority. Highest priority item will be on top of the completion list.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="spanToBeReplaced">Span of text that will be replaced by inserted completion item</param>
+            <returns>
+            Integer representing priority of the item in completion list. Negative priorities represents
+            non-matching items.
+            </returns>
+        </member>
+        <member name="T:PrettyPrompt.Completion.OverloadItem">
+            <summary>
+            An overload item in the Overload Menu Pane.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Completion.SlidingArrayWindow">
+            <summary>
+            Datastructure that provides a window over a segment of an array, similar to <see cref="T:System.ArraySegment`1"/>, but
+            also has a concept of the window "sliding" to always keep a selected index in view. This datastructure powers
+            the auto-complete menu, and the window slides to provide the scrolling of the menu.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.AnsiEscapeCodes.GetMoveCursorToColumn(System.Int32)">
+            <param name="index">Index starts at 1.</param>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.AnsiEscapeCodes.AppendMoveCursorToColumn(System.Text.StringBuilder,System.Int32)">
+            <param name="sb">Target StringBUilder.</param>
+            <param name="index">Index starts at 1.</param>
+        </member>
+        <member name="T:PrettyPrompt.Consoles.CharacterSetModificationKind">
+            <summary>
+            The kind of character set modification.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Consoles.CharacterSetModificationKind.Add">
+            <summary>
+            The rule adds new characters onto the existing set of characters.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Consoles.CharacterSetModificationKind.Remove">
+            <summary>
+            The rule removes characters from the existing set of characters.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Consoles.CharacterSetModificationKind.Replace">
+            <summary>
+            The rule replaces the existing set of characters.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Consoles.CharacterSetModificationRule">
+            <summary>
+            A rule that modifies a set of characters.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.CharacterSetModificationRule.Kind">
+            <summary>
+            The kind of modification.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.CharacterSetModificationRule.Characters">
+            <summary>
+            One or more characters.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Consoles.IConsole">
+            <summary>
+            Console abstraction, mainly for testability.
+            In the real application it will be the System.Console APIs.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.CursorTop">
+            <inheritdoc cref="P:System.Console.CursorTop"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.BufferWidth">
+            <inheritdoc cref="P:System.Console.BufferWidth"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.WindowHeight">
+            <inheritdoc cref="P:System.Console.WindowHeight"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.WindowTop">
+            <inheritdoc cref="P:System.Console.WindowTop"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.KeyAvailable">
+            <inheritdoc cref="P:System.Console.KeyAvailable"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.IConsole.IsErrorRedirected">
+            <inheritdoc cref="P:System.Console.IsErrorRedirected"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.Clear">
+            <inheritdoc cref="M:System.Console.Clear"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.ReadKey(System.Boolean)">
+            <inheritdoc cref="M:System.Console.ReadKey(System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.InitVirtualTerminalProcessing">
+            <summary>
+            Enables ANSI escape codes for controlling the terminal.
+            https://docs.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.Write(System.Text.StringBuilder,System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.WriteLine(System.Text.StringBuilder,System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.WriteError(System.Text.StringBuilder,System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsole.WriteErrorLine(System.Text.StringBuilder,System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)">
+            <param name="console">Console.</param>
+            <param name="value">Value to be written to console.</param>
+            <param name="hideCursor">HideCursor() is surprisingly slow, don't use it unless we're rendering something large. The issue mainly shows when e.g. repeating characters by holding down a key (e.g. spacebar),</param>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsoleX.WriteLine(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsoleX.WriteError(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.IConsoleX.WriteErrorLine(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)">
+            <inheritdoc cref="M:PrettyPrompt.Consoles.IConsoleX.Write(PrettyPrompt.Consoles.IConsole,System.ReadOnlySpan{System.Char},System.Boolean)"/>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.KeyPress.ConsoleKeyInfo">
+            <summary>
+            The key press as reported by Console.ReadKey
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.KeyPress.ObjectPattern">
+            <summary>
+            A tuple that represents the key press.
+            Intended to be pattern matched, e.g. (A) or (Ctrl, A) or (Ctrl | Shift, A).
+            It's either <see cref="T:System.ConsoleKey"/> or (<see cref="T:System.ConsoleModifiers"/>, <see cref="T:System.ConsoleKey"/>).
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Consoles.KeyPress.PastedText">
+            <summary>
+            Text that was pasted as a result of this key press.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.KeyPress.MapInputEscapeSequence(System.Collections.Generic.List{System.ConsoleKeyInfo})">
+            <summary>
+            On Linux, .NET doesn't map all the ANSI escaped inputs into ConsoleKeyInfos. Map some of the missing ones here.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.KeyPress.ReadRemainingKeys(PrettyPrompt.Consoles.IConsole,System.ConsoleKeyInfo)">
+            <summary>
+            Read any remaining key presses in the buffer, including the provided <paramref name="key"/>.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Consoles.SystemConsole">
+            <summary>
+            Implementation of <see cref="T:PrettyPrompt.Consoles.IConsole"/> that uses the normal <see cref="T:System.Console"/> APIs
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Consoles.SystemConsole.GetStdHandle(System.Int32)">
+            <summary>
+            Returned handle does not need to be closed (https://docs.microsoft.com/en-us/windows/console/getstdhandle#handle-disposal).
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Documents.Document">
+            <summary>
+            A Document represents the input text being typed into the prompt.
+            It contains the text being typed, the caret/cursor positions, text selection, and word wrapping.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Documents.Document.currentText">
+            <summary>
+            Cached ToStringed current stringBuilder content. This is optimization for GetText calls so they don't repeatedly ToString underlying stringBuilder.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.Document.Caret">
+            <summary>
+            The one-dimensional index of the text caret in the document text
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.Document.InsertAtCaretAsync(PrettyPrompt.Panes.CodePane,System.Collections.Generic.IAsyncEnumerable{System.String})">
+            <summary>
+            Consume an async enumerable while live updating the Document at each iteration.
+            The streaming input is entered as a single "block" of undo/redo history.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.Document.BeginChanges(PrettyPrompt.Panes.CodePane,PrettyPrompt.Documents.Document.ChangeContextType)">
+            <summary>
+            Accumulates changed events and invokes only one on dispose.
+            Also takes care of history tracking (before/after).
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Documents.ReadOnlyStringBuilder">
+            <summary>
+            A Document represents the input text being typed into the prompt.
+            It contains the text being typed, the caret/cursor positions, text selection, and word wrapping.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Documents.StringBuilderWithCaret">
+            <summary>
+            A Document represents the input text being typed into the prompt.
+            It contains the text being typed, the caret/cursor positions, text selection, and word wrapping.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.StringBuilderWithCaret.Caret">
+            <summary>
+            The one-dimensional index of the text caret in the document text
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.TextSpan.Start">
+            <summary>
+            Start point of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.TextSpan.Length">
+            <summary>
+            Length of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.TextSpan.End">
+            <summary>
+            End of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Documents.TextSpan.IsEmpty">
+            <summary>
+            Determines whether or not the span is empty.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.#ctor(System.Int32,System.Int32)">
+            <summary>
+            Creates a TextSpan instance beginning with the position Start and having the Length specified with length.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.FromBounds(System.Int32,System.Int32)">
+            <summary>
+            Creates a new TextSpan from start and end positions as opposed to a position and length.
+            The returned TextSpan contains the range with start inclusive, and end exclusive.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.Contains(System.Int32)">
+            <summary>
+            Determines whether the position lies within the span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.Contains(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Determines whether span falls completely within this span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.OverlapsWith(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Determines whether span overlaps this span. Two spans are considered to overlap if they have positions in common and neither is empty. Empty spans do not overlap with any other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.OverlapsWith(System.Int32,System.Int32)">
+            <summary>
+            Determines whether span overlaps this span. Two spans are considered to overlap if they have positions in common and neither is empty. Empty spans do not overlap with any other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.Overlap(System.Int32,System.Int32)">
+            <summary>
+            Returns the overlap with the given span, or null if there is no overlap.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.IntersectsWith(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+             Determines whether span intersects this span. Two spans are considered to intersect
+             if they have positions in common or the end of one span coincides with the start
+             of the other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.IntersectsWith(System.Int32)">
+            <summary>
+            Determines whether position intersects this span. A position is considered to
+            intersect if it is between the start and end positions(inclusive) of this span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.TextSpan.Intersection(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Returns the intersection with the given span, or null if there is no intersection.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Documents.UndoRedoHistory">
+            <summary>
+            Stores undo/redo history for a single document.
+            </summary>
+            <remarks>
+            Implementation is naive -- it just stores full snapshots in a list and undo/redo navigates
+            through it. If tracking snapshots of the input ends up causing high memory, we can rework it.
+            </remarks>
+        </member>
+        <member name="M:PrettyPrompt.Documents.WordWrapping.WrapEditableCharacters(PrettyPrompt.Documents.ReadOnlyStringBuilder,System.Int32,System.Int32)">
+            <summary>
+            Wraps editable input, contained in the string builder, to the supplied width.
+            The caret index (as the input is a 1 dimensional string of text) is converted
+            to a 2 dimensional coordinate in the wrapped text.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Documents.WordWrapping.WrapWords(PrettyPrompt.Highlighting.FormattedString,System.Int32,System.Nullable{System.Int32})">
+            <summary>
+            Wrap words into lines of at most maxLength long. Split on spaces
+            where possible, otherwise split by character if a single word is
+            greater than maxLength.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Highlighting.AnsiColor">
+            <summary>
+            ANSI color definitions for the terminal.
+            Each color has a different code depending on if it's applied as a foreground or background color.
+            </summary>
+            <remarks>https://en.wikipedia.org/wiki/ANSI_escape_code#Colors</remarks>
+        </member>
+        <member name="T:PrettyPrompt.Highlighting.CellRenderer">
+            <summary>
+            Given the text and the syntax highlighting information, render the text into the "cells" of the terminal screen.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.CellRenderer.ApplyColorToCharacters(System.Collections.Generic.IReadOnlyCollection{PrettyPrompt.Highlighting.FormatSpan},System.String,System.Int32)">
+            <summary>
+            This is just an extra function used by <see cref="M:PrettyPrompt.Prompt.RenderAnsiOutput(System.String,System.Collections.Generic.IReadOnlyCollection{PrettyPrompt.Highlighting.FormatSpan},System.Int32)"/> that highlights arbitrary text. It's
+            not used for drawing input during normal functioning of the prompt.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Highlighting.FormatSpan.Start">
+            <summary>
+            Start point of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Highlighting.FormatSpan.Length">
+            <summary>
+            Length of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Highlighting.FormatSpan.End">
+            <summary>
+            End of the span.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Highlighting.FormatSpan.IsEmpty">
+            <summary>
+            Determines whether or not the span is empty.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.Contains(System.Int32)">
+            <summary>
+            Determines whether the position lies within the span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.Contains(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Determines whether span falls completely within this span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.OverlapsWith(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Determines whether span overlaps this span. Two spans are considered to overlap if they have positions in common and neither is empty. Empty spans do not overlap with any other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.OverlapsWith(System.Int32,System.Int32)">
+            <summary>
+            Determines whether span overlaps this span. Two spans are considered to overlap if they have positions in common and neither is empty. Empty spans do not overlap with any other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.Overlap(System.Int32,System.Int32)">
+            <summary>
+            Returns the overlap with the given span, or null if there is no overlap.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.IntersectsWith(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+             Determines whether span intersects this span. Two spans are considered to intersect
+             if they have positions in common or the end of one span coincides with the start
+             of the other span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.IntersectsWith(System.Int32)">
+            <summary>
+            Determines whether position intersects this span. A position is considered to
+            intersect if it is between the start and end positions(inclusive) of this span.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.Intersection(PrettyPrompt.Documents.TextSpan)">
+            <summary>
+            Returns the intersection with the given span, or null if there is no intersection.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.Offset(System.Int32)">
+            <summary>
+            Creates new span translated by some offset.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormatSpan.WithLength(System.Int32)">
+            <summary>
+            Creates new span with new length.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Highlighting.FormattedString">
+            <summary>
+            Represents text with associated non-overlapping formating spans.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormattedString.Trim">
+            <summary>
+            Removes all leading and trailing white-space characters from the current string.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormattedString.Substring(System.Int32,System.Int32)">
+            <summary>
+            Retrieves a substring from this instance. The substring starts at a specified character position and has a specified length.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormattedString.Replace(System.String,System.String)">
+            <summary>
+            Returns a new string in which all occurrences of a specified string in the current instance are replaced with another specified string.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Highlighting.FormattedString.Split(System.Char)">
+            <summary>
+            Splits a string into substrings based on the provided character separator.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.History.HistoryLog.unsubmittedBuffer">
+            <summary>
+            In the case where the user leaves some unsubmitted text on their prompt (the latestCodePane), we capture
+            it so we can restore it when the user stops navigating through history (i.e. they press Down Arrow until
+            they're back to their current prompt).
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.History.HistoryLog.persistentHistoryFilepath">
+            <summary>
+            Filepath of the history storage file. If null, history is not saved. History is stored as base64 encoded lines,
+            so we can efficiently append to the file, and not have to worry about newlines in the history entries.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.History.HistoryLog.historyPath">
+            <summary>
+            Indices of path through history. Sequence can contain gaps because of filtering but it should be monotonously decreasing.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.History.HistoryLog.codePane">
+            <summary>
+            The currently code pane being edited. The contents of this pane will be changed when
+            navigating through the history.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CodePane.Document">
+            <summary>
+            The input text being edited in the pane
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CodePane.Result">
+            <summary>
+            The final input text that was entered into the pane.
+            When null, the text is still being edited.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CodePane.WordWrappedLines">
+            <summary>
+            Document text split into lines.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CodePane.Cursor">
+            <summary>
+            The two-dimensional coordinate of the text cursor in the document,
+            after word wrapping / newlines have been processed.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Panes.CompletionPane.VerticalPaddingHeight">
+            <summary>
+            Cursor + box borders.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Panes.CompletionPane.allCompletions">
+            <summary>
+            All completions available. Called once when the window is initially opened
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CompletionPane.FilteredView">
+            <summary>
+            An "ordered view" over <see cref="F:PrettyPrompt.Panes.CompletionPane.allCompletions"/> that shows the list filtered by what the user has typed.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.CompletionPane.IsOpen">
+            <summary>
+            Whether or not the window is currently open / visible.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.Panes.OverloadPane.IsOpen">
+            <summary>
+            Whether or not the window is currently open / visible.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Prompt">
+            <inheritdoc cref="T:PrettyPrompt.IPrompt" />
+        </member>
+        <member name="M:PrettyPrompt.Prompt.#ctor(System.String,PrettyPrompt.PromptCallbacks,PrettyPrompt.Consoles.IConsole,PrettyPrompt.PromptConfiguration)">
+            <summary>
+            Instantiates a prompt object. This object can be re-used for multiple invocations of <see cref="M:PrettyPrompt.Prompt.ReadLineAsync"/>.
+            </summary>
+            <param name="persistentHistoryFilepath">The filepath of where to store history entries. If null, persistent history is disabled.</param>
+            <param name="callbacks">A collection of callbacks for modifying and intercepting the prompt's behavior</param>
+            <param name="console">The implementation of the console to use. This is mainly for ease of unit testing</param>
+            <param name="configuration">If null, default configuration is used.</param>
+        </member>
+        <member name="M:PrettyPrompt.Prompt.ReadLineAsync">
+            <inheritdoc cref="M:PrettyPrompt.IPrompt.ReadLineAsync" />
+        </member>
+        <member name="M:PrettyPrompt.Prompt.RenderAnsiOutput(System.String,System.Collections.Generic.IReadOnlyCollection{PrettyPrompt.Highlighting.FormatSpan},System.Int32)">
+            <summary>
+            Given a string, and a collection of highlighting instructions, create ANSI Escape Sequence instructions that will 
+            draw the highlighted text to the console.
+            </summary>
+            <param name="text">the text to print</param>
+            <param name="formatting">the formatting instructions containing color information for the <paramref name="text"/></param>
+            <param name="textWidth">the width of the console. This controls the word wrapping, and can usually be <see cref="P:System.Console.BufferWidth"/>.</param>
+            <returns>A string of escape sequences that will draw the <paramref name="text"/></returns>
+            <remarks>
+            This function is different from most in that it involves drawing _output_ to the screen, rather than
+            drawing typed user input. It's still useful because if users want syntax-highlighted input, chances are they
+            also want syntax-highlighted output. It's sort of co-opting existing input functions for the purposes of output.
+            </remarks>
+        </member>
+        <member name="T:PrettyPrompt.IPrompt">
+            <summary>
+            The main entry point of the prompt functionality.
+            This class should be instantiated once with the desired configuration; then <see cref="M:PrettyPrompt.IPrompt.ReadLineAsync"/> 
+            can be called once for each line of input.
+            </summary>
+            <remarks>
+            We don't actually use this interface internally, but it's likely that
+            users will want to mock the prompt as it's IO-related.
+            </remarks>
+        </member>
+        <member name="M:PrettyPrompt.IPrompt.ReadLineAsync">
+            <summary>
+            Prompts the user for input and returns the result.
+            </summary>
+            <returns>The input that the user submitted</returns>
+        </member>
+        <member name="T:PrettyPrompt.PromptResult">
+            <summary>
+            Represents the user's input from the prompt.
+            If the user successfully submitted text, <see cref="P:PrettyPrompt.PromptResult.IsSuccess"/> will be true and <see cref="P:PrettyPrompt.PromptResult.Text"/> will contain the input.
+            If the user cancelled (via ctrl-c), <see cref="P:PrettyPrompt.PromptResult.IsSuccess"/> will be false and <see cref="P:PrettyPrompt.PromptResult.Text"/> will be an empty string.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.PromptResult.Text">
+            <summary>
+            The current input on the prompt when the user submited the prompt or pressed the keybinding.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.PromptResult.CancellationToken">
+            <summary>
+            If your user presses ctrl-c while your application is processing the user's input, this CancellationToken will be
+            signaled (i.e. IsCancellationRequested will be set to true)
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.KeyPressCallbackResult">
+            <summary>
+            Represents the result of a user's key press, when they pressed a keybinding from <see cref="M:PrettyPrompt.PromptCallbacks.GetKeyPressCallbacks"/>.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.KeyPressCallbackResult.Output">
+            <summary>
+            Any output the consuming application wants to display as a result of the keybinding.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.StreamingInputCallbackResult">
+            <summary>
+            Represents input to be streamed into the prompt. Should be used in scenarios where input
+            to be streamed is available asynchronously.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.KeyPressCallbackAsync">
+            <summary>
+            A callback your application can provide to define custom behavior when a key is pressed.
+            <seealso cref="M:PrettyPrompt.PromptCallbacks.GetKeyPressCallbacks"/>
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>
+            <list type="bullet">
+            <item>
+            If a non-null <see cref="T:PrettyPrompt.KeyPressCallbackResult"/> is returned, the prompt will be submitted.
+            The <see cref="T:PrettyPrompt.KeyPressCallbackResult"/> will be returned by the current
+            <see cref="M:PrettyPrompt.Prompt.ReadLineAsync"/> function.
+            </item>
+            <item>
+            If a null <see cref="T:PrettyPrompt.KeyPressCallbackResult"/> is returned, then the user will remain on the
+            current prompt.
+            </item>
+            </list>
+            </returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.TryGetKeyPressCallbacks(System.ConsoleKeyInfo,PrettyPrompt.KeyPressCallbackAsync@)">
+            <summary>
+            Looks up "Callback Functions" for  particular key press.
+            The callback function will be invoked when the keys are pressed, with the current prompt
+            text and the caret position within the text. ConsoleModifiers can be omitted if not required.
+            </summary>
+            If the prompt should be submitted as a result of the user's key press, then a non-null <see cref="T:PrettyPrompt.KeyPressCallbackResult"/> may
+            be returned from the <see cref="T:PrettyPrompt.KeyPressCallbackAsync"/> function. If a null result is returned, then the user will remain on
+            the current input prompt.
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.HighlightCallbackAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            Provides syntax-highlighting for input text.
+            </summary>
+            <param name="text">The text to be highlighted</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>A collection of formatting instructions</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.GetSpanToReplaceByCompletionAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Determines which part of document will be replaced by inserted completion item.
+            If not specified, default word detection is used.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>Span of text that will be replaced by inserted completion item.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.GetCompletionItemsAsync(System.String,System.Int32,PrettyPrompt.Documents.TextSpan,System.Threading.CancellationToken)">
+            <summary>
+            Provides to auto-completion items for specified position in the input text.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="spanToBeReplaced">Span of text that will be replaced by inserted completion item</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>A list of possible completions that will be displayed in the autocomplete menu.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.ShouldOpenCompletionWindowAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <summary>
+            Controls when the completion window should open.
+            If not specified, C#-like intellisense style behavior is used.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="keyPress">Key press after which we are asking whether completion list should be automatically open.</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>A value indicating whether the completion window should automatically open.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.TransformKeyPressAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <summary>
+            Optionaly transforms key presses to another ones.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="keyPress">Key press pattern in question</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>Potentialy transformed key press.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.GetOverloadsAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            Provides overload items for specified position in the input text if available otherwise empty collection is returned.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>A list of possible completions that will be displayed in the autocomplete menu.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.ConfirmCompletionCommit(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <summary>
+            Completion item commit can still be discarded based on current position of caret in document. This method is called only
+            when completion item is going to be submited.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="keyPress">Key press pattern in question</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns><see langword="true"/> if the completion item should be submitted or <see langword="false"/> otherwise.</returns>
+        </member>
+        <member name="M:PrettyPrompt.IPromptCallbacks.FormatInput(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <summary>
+            Provides way to automatically format input text.
+            </summary>
+            <param name="text">The user's input text</param>
+            <param name="caret">The index of the text caret in the input text</param>
+            <param name="keyPress">Key press pattern in question</param>
+            <param name="cancellationToken">Cancellation token</param>
+            <returns>Formatted input and new caret position.</returns>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.GetKeyPressCallbacks">
+            <summary>
+            This method is called only once and provides list of key press patterns with "Callback Functions".
+            The callback function will be invoked when the keys are pressed, with the current prompt
+            text and the caret position within the text. ConsoleModifiers can be omitted if not required.
+            </summary>
+            If the prompt should be submitted as a result of the user's key press, then a non-null <see cref="T:PrettyPrompt.KeyPressCallbackResult"/> may
+            be returned from the <see cref="T:PrettyPrompt.KeyPressCallbackAsync"/> function. If a null result is returned, then the user will remain on
+            the current input prompt.
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.HighlightCallbackAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.HighlightCallbackAsync(System.String,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.GetSpanToReplaceByCompletionAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.GetSpanToReplaceByCompletionAsync(System.String,System.Int32,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.GetCompletionItemsAsync(System.String,System.Int32,PrettyPrompt.Documents.TextSpan,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.GetCompletionItemsAsync(System.String,System.Int32,PrettyPrompt.Documents.TextSpan,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.ShouldOpenCompletionWindowAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.ShouldOpenCompletionWindowAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.TransformKeyPressAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.TransformKeyPressAsync(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.ConfirmCompletionCommit(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.ConfirmCompletionCommit(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.FormatInput(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.IPromptCallbacks.FormatInput(System.String,System.Int32,PrettyPrompt.Consoles.KeyPress,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="M:PrettyPrompt.PromptCallbacks.GetOverloadsAsync(System.String,System.Int32,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:PrettyPrompt.PromptCallbacks.GetOverloadsAsync(System.String,System.Int32,System.Threading.CancellationToken)"/>
+        </member>
+        <member name="P:PrettyPrompt.PromptConfiguration.HasUserOptedOutFromColor">
+            <summary>
+            <code>true</code> if the user opted out of color, via an environment variable as specified by https://no-color.org/.
+            PrettyPrompt will automatically disable colors in this case. You can read this property to control other colors in
+            your application.
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.PromptConfiguration.Prompt">
+            <summary>
+            Formatted prompt string to draw (e.g. "> ")
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.PromptConfiguration.MinCompletionItemsCount">
+            <summary>
+            How few completion items we are willing to render. If we do not have a space for rendering of
+            completion list with <see cref="P:PrettyPrompt.PromptConfiguration.MinCompletionItemsCount"/>
+            </summary>
+        </member>
+        <member name="P:PrettyPrompt.PromptConfiguration.ProportionOfWindowHeightForCompletionPane">
+            <summary>
+            Determines maximum verical space allocated under current input line for completion pane.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Rendering.BoxDrawing.GetHorizontalBordersWidth(PrettyPrompt.Rendering.BoxType,PrettyPrompt.PromptConfiguration)">
+            <summary>
+            CompletionItems: Left border + marker + right padding + right border.
+            TextLines: Left border + left padding + right padding + right border.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Rendering.BoxDrawing.GetHorizontalBordersWidth(PrettyPrompt.Rendering.BoxType)">
+            <inheritdoc cref="M:PrettyPrompt.Rendering.BoxDrawing.GetHorizontalBordersWidth(PrettyPrompt.Rendering.BoxType,PrettyPrompt.PromptConfiguration)"/>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.VerticalBordersHeight">
+            <summary>
+            Top border + bottom border.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.CornerUpperRightCell">
+            <summary>Character: ┐</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.CornerLowerRightCell">
+            <summary>Character: ┘</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.CornerUpperLeftCell">
+            <summary>Character: ┌</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.CornerLowerLeftCell">
+            <summary>Character: └</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeHorizontalCell">
+            <summary>Character: ─</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeVerticalCell">
+            <summary>Character: │</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeVerticalAndLeftHorizontalCell">
+            <summary>Character: ┤</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeVerticalAndRightHorizontalCell">
+            <summary>Character: ├</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeHorizontalAndLowerVerticalCell">
+            <summary>Character: ┬</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.EdgeHorizontalAndUpperVerticalCell">
+            <summary>Character: ┴</summary>
+        </member>
+        <member name="F:PrettyPrompt.Rendering.BoxDrawing.CrossCell">
+            <summary>Character: ┼</summary>
+        </member>
+        <member name="M:PrettyPrompt.Rendering.IncrementalRendering.CalculateDiffAndWriteToConsole(PrettyPrompt.Rendering.Screen,PrettyPrompt.Rendering.Screen,PrettyPrompt.Consoles.ConsoleCoordinate,PrettyPrompt.Consoles.IConsole)">
+            <summary>
+            Given a new screen and the previously rendered screen,
+            returns the minimum required ansi escape sequences to
+            render the new screen.
+            
+            In the simple case, where the user typed a single character, we should only return that character (e.g. the returned string will be of length 1).
+            A more complicated case, like finishing a word that triggers syntax highlighting, we should redraw just that word in the new color.
+            An even more complicated case, like opening the autocomplete menu, should draw the autocomplete menu, and return the cursor to the correct position.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Rendering.IncrementalRendering.CalculateDiff(PrettyPrompt.Rendering.Screen,PrettyPrompt.Rendering.Screen,PrettyPrompt.Consoles.ConsoleCoordinate)">
+            <summary>
+            Given a new screen and the previously rendered screen,
+            returns the minimum required ansi escape sequences to
+            render the new screen.
+            
+            In the simple case, where the user typed a single character, we should only return that character (e.g. the returned string will be of length 1).
+            A more complicated case, like finishing a word that triggers syntax highlighting, we should redraw just that word in the new color.
+            An even more complicated case, like opening the autocomplete menu, should draw the autocomplete menu, and return the cursor to the correct position.
+            
+            This method needs to allocate string for result. If you want to just write result to console use <see cref="M:PrettyPrompt.Rendering.IncrementalRendering.CalculateDiffAndWriteToConsole(PrettyPrompt.Rendering.Screen,PrettyPrompt.Rendering.Screen,PrettyPrompt.Consoles.ConsoleCoordinate,PrettyPrompt.Consoles.IConsole)"/> instead.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Rendering.Screen">
+            <summary>
+            Represents characters (TextElements) rendered on a screen.
+            Used as part of <see cref="T:PrettyPrompt.Rendering.IncrementalRendering"/>.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Rendering.Screen.PositionCursor(PrettyPrompt.Rendering.Screen,PrettyPrompt.Consoles.ConsoleCoordinate)">
+             <summary>
+             We have our cursor coordinate, but its position represents the position in the input string.
+             We need to reposition both the row/column of the cursor based on how they'll be rendered to
+             the console:
+            
+             - For the row: we may only display a subset of the rows based on the current console size,
+               so we need to adjust the row position based on the viewport start.
+             - For the column: repositioning is needed in the case where we've rendered CJK characters.
+               These are are "full width" characters and take up two characters on screen.
+            
+             </summary>
+        </member>
+        <member name="T:PrettyPrompt.Cell">
+             <summary>
+             Represents a single cell in the console, with any associate formatting.
+            
+             https://en.wikipedia.org/wiki/Halfwidth_and_fullwidth_forms
+             A character can be full-width (e.g. CJK: Chinese, Japanese, Korean) in
+             which case it will take up two characters on the console, so we represent
+             it as two consecutive cells. The first cell will have <see cref="P:PrettyPrompt.Cell.ElementWidth"/> of 2.
+             the trailing cell will have <see cref="P:PrettyPrompt.Cell.IsContinuationOfPreviousCharacter"/> set to true.
+             </summary>
+        </member>
+        <member name="T:PrettyPrompt.Renderer">
+            <summary>
+            Given our panes, actually draw them to the screen.
+            This class mostly deals with generating Cells, which the <see cref="T:PrettyPrompt.Rendering.IncrementalRendering"/> class then processes
+            to generate the minimal set of ANSI escape sequences to write to the screen.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.Renderer.TrimLinesToViewPortSize(PrettyPrompt.Panes.CodePane,PrettyPrompt.Row[])">
+            <summary>
+            If there are too many lines of code to show in the current console window, return a subset
+            of the lines that fit in the console window ("viewport") along with the index of the line
+            where the viewport starts.
+            The lines returned will always contain the line that contains the cursor.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.Row">
+            <summary>
+            A row of cells. Just here for the readability of method signatures.
+            </summary>
+        </member>
+        <member name="T:PrettyPrompt.ScreenArea">
+            <summary>
+            An area of the screen that's being rendered at a coordinate.
+            This is conceptually a UI pane, rasterized into characters.
+            </summary>
+        </member>
+        <member name="M:PrettyPrompt.ScreenArea.#ctor(PrettyPrompt.Consoles.ConsoleCoordinate,PrettyPrompt.Row[],System.Boolean,System.Int32)">
+            <summary>
+            An area of the screen that's being rendered at a coordinate.
+            This is conceptually a UI pane, rasterized into characters.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.TextSelection.SelectionSpan.Start">
+            <summary>
+            Inclusive.
+            </summary>
+        </member>
+        <member name="F:PrettyPrompt.TextSelection.SelectionSpan.End">
+            <summary>
+            Exclusive.
+            </summary>
+        </member>
+    </members>
+</doc>

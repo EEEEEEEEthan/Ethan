@@ -20,12 +20,11 @@ string? apiKey = null;
 var model = "gpt-4o-mini";
 var baseUrl = "https://api.openai.com";
 if(File.Exists(userSettingsFilepath))
-{
 	try
 	{
 		var jsonText = File.ReadAllText(userSettingsFilepath);
 		var loaded = JsonSerializer.Deserialize<UserChatSettings>(jsonText, ChatJson.serializer);
-		if(loaded is not null)
+		if(loaded is {})
 		{
 			apiKey = loaded.ApiKey;
 			if(!string.IsNullOrWhiteSpace(loaded.Model))
@@ -34,11 +33,7 @@ if(File.Exists(userSettingsFilepath))
 				baseUrl = loaded.BaseUrl.TrimEnd('/');
 		}
 	}
-	catch(JsonException)
-	{
-		Console.WriteLine($"提示：配置文件格式无效，已忽略：{userSettingsFilepath}");
-	}
-}
+	catch(JsonException) { Console.WriteLine($"提示：配置文件格式无效，已忽略：{userSettingsFilepath}"); }
 if(!string.IsNullOrEmpty(environmentApiKey))
 	apiKey = environmentApiKey;
 if(!string.IsNullOrEmpty(environmentModel))
@@ -98,7 +93,6 @@ while(true)
 		Console.WriteLine($"请求失败：{ex.Message}");
 	}
 }
-return;
 static bool tryHandleSlash(
 	string trimmed,
 	string userSettingsFilepath,
@@ -221,7 +215,8 @@ static async Task<string> completeChatAsync(
 }
 file sealed record UserChatSettings(
 	[property: JsonPropertyName("apiKey")]string? ApiKey,
-	[property: JsonPropertyName("baseUrl")]string BaseUrl,
+	[property: JsonPropertyName("baseUrl")]
+	string BaseUrl,
 	[property: JsonPropertyName("model")]string Model);
 file sealed record ChatMessage(string Role, string Content);
 // ReSharper disable NotAccessedPositionalProperty.Local
@@ -285,15 +280,7 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		var token = text.AsSpan(spanToBeReplaced);
 		if(token.Length == 0 || token[0] != '/')
 			return Task.FromResult<IReadOnlyList<CompletionItem>>(Array.Empty<CompletionItem>());
-		List<CompletionItem>? matches = null;
-		foreach(var item in slashCompletionItems)
-		{
-			if(item is not SlashCompletionItem slash || !slash.MatchesPrefix(token))
-				continue;
-			matches ??= new(slashCompletionItems.Length);
-			matches.Add(item);
-		}
-		return Task.FromResult(matches ?? (IReadOnlyList<CompletionItem>)Array.Empty<CompletionItem>());
+		return Task.FromResult<IReadOnlyList<CompletionItem>>(slashCompletionItems);
 	}
 	protected override Task<bool> ShouldOpenCompletionWindowAsync(
 		string text,
@@ -326,5 +313,4 @@ file sealed class SlashCompletionItem(string replacement, string caption): Compl
 			return 1000;
 		return 500 + pattern.Length;
 	}
-	internal bool MatchesPrefix(ReadOnlySpan<char> prefix) { return commandText.AsSpan().StartsWith(prefix, StringComparison.OrdinalIgnoreCase); }
 }
