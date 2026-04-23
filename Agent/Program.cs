@@ -1,7 +1,9 @@
 ﻿using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Microsoft.SemanticKernel;
+using Microsoft.SemanticKernel.ChatCompletion;
+using Microsoft.SemanticKernel.Connectors.OpenAI;
 using PrettyPrompt;
 using PrettyPrompt.Completion;
 using PrettyPrompt.Consoles;
@@ -12,8 +14,8 @@ var userSettingsDirectory = Path.Combine(
 	"Ethan",
 	"Agent");
 var userSettingsFilepath = Path.Combine(userSettingsDirectory, "settings.json");
-var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 List<PersistedChatMessage> messages = [];
+var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 var environmentApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 var environmentModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
 var environmentBaseUrl = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
@@ -51,6 +53,8 @@ await using var prompt = new Prompt(
 	persistentHistoryFilepath: null,
 	callbacks: new SlashPromptCallbacks(),
 	configuration: promptConfiguration);
+Kernel? activeKernel = null;
+KernelConfigSnapshot? lastKernelConfig = null;
 while(true)
 {
 	var result = await prompt.ReadLineAsync();
@@ -67,8 +71,14 @@ while(true)
 			   ref apiKey,
 			   ref model,
 			   ref baseUrl,
-			   messages))
+			   messages,
+			   out var connectionSettingsTouched))
 			break;
+		if(connectionSettingsTouched)
+		{
+			activeKernel = null;
+			lastKernelConfig = null;
+		}
 		continue;
 	}
 	if(string.IsNullOrWhiteSpace(apiKey))
@@ -76,24 +86,120 @@ while(true)
 		Console.WriteLine("请先 /apikey <你的密钥>");
 		continue;
 	}
+	if(lastKernelConfig is null || !lastKernelConfig.MatchesCurrent(apiKey, model, baseUrl) || activeKernel is null)
+		(activeKernel, lastKernelConfig) = buildKernelState(httpClient, apiKey, model, baseUrl);
+	var currentKernel = activeKernel
+		?? throw new InvalidOperationException("内部错误：Kernel 未初始化。");
 	var turnStartIndex = messages.Count;
 	messages.Add(new("user", trimmed));
 	try
 	{
-		var reply = await sendChatCompletionTurnAsync(
-			httpClient,
-			baseUrl,
-			apiKey,
-			model,
+		var chat = currentKernel.GetRequiredService<IChatCompletionService>();
+		var reply = await runStreamingChatTurnAsync(
+			currentKernel,
+			chat,
 			messages);
 		messages.Add(new("assistant", reply ?? string.Empty));
 	}
-	catch(Exception ex)
+	catch(Exception exception)
 	{
 		if(messages.Count > turnStartIndex)
 			messages.RemoveRange(turnStartIndex, messages.Count - turnStartIndex);
-		Console.WriteLine($"请求失败：{ex.Message}");
+		Console.WriteLine($"请求失败：{exception.Message}");
 	}
+}
+return;
+static (Kernel kernel, KernelConfigSnapshot snapshot) buildKernelState(
+	HttpClient sharedHttp,
+	string apiKeyValue,
+	string modelId,
+	string userBaseUrl)
+{
+	var builder = Kernel.CreateBuilder();
+	var endpoint = resolveOpenAiServiceEndpointForKernel(userBaseUrl);
+	builder.AddOpenAIChatCompletion(
+		modelId: modelId,
+		endpoint: endpoint,
+		apiKey: apiKeyValue,
+		orgId: null,
+		serviceId: null,
+		httpClient: sharedHttp);
+	var kernel = builder.Build();
+	return(kernel, new(apiKeyValue, modelId, userBaseUrl));
+}
+static Uri resolveOpenAiServiceEndpointForKernel(string userBase)
+{
+	var trimmed = userBase.TrimEnd('/');
+	if(trimmed.Length == 0)
+		return new("https://api.openai.com/v1", UriKind.Absolute);
+	if(trimmed.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)
+	   && trimmed.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
+	   && trimmed.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
+		trimmed = trimmed[..^"/responses".Length].TrimEnd('/');
+	if(trimmed.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
+		return new(trimmed[..^"/chat/completions".Length], UriKind.Absolute);
+	if(trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+		return new(trimmed[..^"/chat/completions".Length], UriKind.Absolute);
+	if(trimmed.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
+	   && trimmed.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
+		return new(trimmed, UriKind.Absolute);
+	if(trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+		return new(trimmed, UriKind.Absolute);
+	if(Uri.TryCreate(trimmed, UriKind.Absolute, out var openAiCheck)
+	   && string.Equals(openAiCheck.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
+	   && (string.IsNullOrEmpty(openAiCheck.AbsolutePath) || openAiCheck.AbsolutePath == "/"))
+		return new("https://api.openai.com/v1", UriKind.Absolute);
+	if(Uri.TryCreate(trimmed + "/v1", UriKind.Absolute, out var withV1))
+		return withV1;
+	return new(trimmed, UriKind.Absolute);
+}
+static async Task<string?> runStreamingChatTurnAsync(
+	Kernel kernel,
+	IChatCompletionService chatCompletion,
+	IReadOnlyList<PersistedChatMessage> conversation)
+{
+	var history = toChatHistory(conversation);
+	var execution = new OpenAIPromptExecutionSettings();
+	var textBuffer = new StringBuilder();
+	var streamPendingCarriageReturn = false;
+	var streaming = chatCompletion.GetStreamingChatMessageContentsAsync(
+		chatHistory: history,
+		executionSettings: execution,
+		kernel: kernel);
+	await foreach(var part in streaming.ConfigureAwait(false))
+	{
+		var textChunk = part.Content;
+		if(string.IsNullOrEmpty(textChunk))
+			continue;
+		textBuffer.Append(textChunk);
+		var formatted = formatTextForWindowsConsolePiece(textChunk, ref streamPendingCarriageReturn);
+		if(formatted.Length != 0)
+		{
+			Console.Write(formatted);
+			await Console.Out.FlushAsync().ConfigureAwait(false);
+		}
+	}
+	var trailingNewline = formatTextForWindowsConsolePiece(string.Empty, ref streamPendingCarriageReturn);
+	if(trailingNewline.Length != 0)
+		Console.Write(trailingNewline);
+	await Console.Out.FlushAsync().ConfigureAwait(false);
+	Console.WriteLine();
+	return textBuffer.Length > 0? textBuffer.ToString() : null;
+}
+static ChatHistory toChatHistory(IReadOnlyList<PersistedChatMessage> items)
+{
+	var history = new ChatHistory();
+	foreach(var item in items)
+		switch(item.Role)
+		{
+			case"user":
+				history.AddUserMessage(item.Content ?? string.Empty);
+				break;
+			case"assistant":
+				history.AddAssistantMessage(item.Content ?? string.Empty);
+				break;
+		}
+	return history;
 }
 static bool tryHandleSlash(
 	string trimmed,
@@ -101,8 +207,10 @@ static bool tryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
-	List<PersistedChatMessage> messages)
+	List<PersistedChatMessage> messages,
+	out bool connectionSettingsTouched)
 {
+	connectionSettingsTouched = false;
 	var spaceIndex = trimmed.IndexOf(' ');
 	var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
 	var argument = spaceIndex < 0? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
@@ -129,6 +237,7 @@ static bool tryHandleSlash(
 				return true;
 			}
 			apiKey = argument;
+			connectionSettingsTouched = true;
 			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine("已设置 API Key 并已保存。");
 			return true;
@@ -139,6 +248,7 @@ static bool tryHandleSlash(
 				return true;
 			}
 			model = argument;
+			connectionSettingsTouched = true;
 			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine($"已设置模型：{model}（已保存）");
 			return true;
@@ -149,6 +259,7 @@ static bool tryHandleSlash(
 				return true;
 			}
 			baseUrl = argument.TrimEnd('/');
+			connectionSettingsTouched = true;
 			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
 			Console.WriteLine($"已设置基础地址：{baseUrl}（已保存）");
 			return true;
@@ -164,115 +275,14 @@ static bool tryHandleSlash(
 			return true;
 	}
 }
-static void saveUserChatSettings(string filepath, string? apiKey, string model, string baseUrl)
+static void saveUserChatSettings(string filepath, string? apiKeyValue, string modelId, string userBase)
 {
 	var parentDirectory = Path.GetDirectoryName(filepath);
 	if(!string.IsNullOrEmpty(parentDirectory))
 		Directory.CreateDirectory(parentDirectory);
-	var payload = new UserChatSettings(apiKey, baseUrl.TrimEnd('/'), model);
+	var payload = new UserChatSettings(apiKeyValue, userBase.TrimEnd('/'), modelId);
 	var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
 	File.WriteAllText(filepath, jsonText);
-}
-static async Task<string?> sendChatCompletionTurnAsync(
-	HttpClient httpClient,
-	string baseUrl,
-	string apiKey,
-	string model,
-	IReadOnlyList<PersistedChatMessage> conversation)
-{
-	var trimmedUrl = baseUrl.TrimEnd('/');
-	string endpoint;
-	if(trimmedUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
-	   || trimmedUrl.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
-		endpoint = trimmedUrl;
-	else if(trimmedUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-		endpoint = $"{trimmedUrl}/chat/completions";
-	else if(trimmedUrl.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-	        && trimmedUrl.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-	{
-		if(trimmedUrl.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
-			trimmedUrl = trimmedUrl[..^"/responses".Length];
-		endpoint = $"{trimmedUrl}/chat/completions";
-	}
-	else
-		endpoint = $"{trimmedUrl}/v1/chat/completions";
-	var payload = new JsonObject
-	{
-		["model"] = model,
-		["messages"] = buildOpenAiMessagesArray(conversation),
-		["stream"] = true,
-	};
-	var json = payload.ToJsonString();
-	using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-	request.Headers.Authorization = new("Bearer", apiKey);
-	request.Content = new StringContent(json, Encoding.UTF8, "application/json");
-	using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
-	if(!response.IsSuccessStatusCode)
-	{
-		var errorBody = await response.Content.ReadAsStringAsync();
-		throw new InvalidOperationException($"{(int)response.StatusCode} {response.ReasonPhrase}: {errorBody}");
-	}
-	await using var bodyStream = await response.Content.ReadAsStreamAsync();
-	using var lineReader = new StreamReader(bodyStream, Encoding.UTF8);
-	var contentBuilder = new StringBuilder();
-	var streamPendingCarriageReturn = false;
-	while(!lineReader.EndOfStream)
-	{
-		var line = await lineReader.ReadLineAsync();
-		if(string.IsNullOrWhiteSpace(line))
-			continue;
-		if(!line.StartsWith("data:", StringComparison.Ordinal))
-			continue;
-		var data = line["data:".Length..].TrimStart();
-		if(data == "[DONE]")
-			break;
-		JsonDocument chunk;
-		try { chunk = JsonDocument.Parse(data); }
-		catch(JsonException) { continue; }
-		using(chunk)
-		{
-			var root = chunk.RootElement;
-			if(root.TryGetProperty("error", out var errorElement))
-			{
-				var message = errorElement.TryGetProperty("message", out var messageElement)
-					? messageElement.GetString()
-					: errorElement.GetRawText();
-				throw new InvalidOperationException($"流式响应错误：{message}");
-			}
-			if(!root.TryGetProperty("choices", out var choices) || choices.GetArrayLength() == 0)
-				continue;
-			var first = choices[0];
-			if(!first.TryGetProperty("delta", out var delta))
-				continue;
-			if(delta.TryGetProperty("content", out var deltaContent)
-			   && deltaContent.ValueKind is JsonValueKind.String)
-			{
-				var piece = deltaContent.GetString();
-				if(!string.IsNullOrEmpty(piece))
-				{
-					contentBuilder.Append(piece);
-					Console.Write(formatTextForWindowsConsolePiece(piece, ref streamPendingCarriageReturn));
-					Console.Out.Flush();
-				}
-			}
-		}
-	}
-	Console.WriteLine();
-	Console.Out.Flush();
-	return contentBuilder.Length > 0? contentBuilder.ToString() : null;
-}
-static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> conversation)
-{
-	var messagesArray = new JsonArray();
-	foreach(var message in conversation)
-		if(message.Role is"user" or"assistant")
-			messagesArray.Add(
-				new JsonObject
-				{
-					["role"] = message.Role,
-					["content"] = message.Content ?? string.Empty,
-				});
-	return messagesArray;
 }
 static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
 {
@@ -319,6 +329,21 @@ static string formatTextForWindowsConsolePiece(string segment, ref bool pendingC
 		}
 	}
 	return builder.ToString();
+}
+file sealed class KernelConfigSnapshot(
+	string? apiKeySnapshot,
+	string modelIdSnapshot,
+	string userBaseUrlSnapshot)
+{
+	public bool MatchesCurrent(string? key, string currentModel, string currentBase)
+	{
+		return key == apiKeySnapshot
+			&& currentModel == modelIdSnapshot
+			&& string.Equals(
+				currentBase.TrimEnd('/'),
+				userBaseUrlSnapshot.TrimEnd('/'),
+				StringComparison.Ordinal);
+	}
 }
 file sealed record UserChatSettings(
 	[property: JsonPropertyName("apiKey")]string? ApiKey,
