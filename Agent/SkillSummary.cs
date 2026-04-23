@@ -1,6 +1,18 @@
-﻿namespace Agent;
+﻿using System.Text;
+namespace Agent;
 public sealed record SkillSummary(string Id, string Description, string Path)
 {
+	public static string BuildAgentSystemPrompt(IReadOnlyDictionary<string, SkillSummary> index)
+	{
+		var builder = new StringBuilder();
+		builder.AppendLine("可用技能（id 与摘要），新对话请据此选用；需要细则时请调用 learn_skill。");
+		foreach(var pair in index.OrderBy(static kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+			builder.AppendLine($"- {pair.Key}: {pair.Value.Description}");
+		builder.AppendLine();
+		builder.AppendLine(
+			"工具 learn_skill(skill_id, relative_path?)：relative_path 为相对技能根目录的文件路径；不传时读取 SKILL.md 全文，并附带该技能目录下相对路径列表；传入路径时只返回该文件的完整 UTF-8 文本。");
+		return builder.ToString();
+	}
 	public static IEnumerable<string> DefaultSkillRepositoryRoots()
 	{
 		var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -43,8 +55,7 @@ public sealed record SkillSummary(string Id, string Description, string Path)
 		var result = new Dictionary<string, SkillSummary>(StringComparer.OrdinalIgnoreCase);
 		foreach(var entry in orderedEntries)
 		{
-			if(!perNameCount.TryGetValue(entry.BaseName, out var occurrence))
-				occurrence = 0;
+			var occurrence = perNameCount.GetValueOrDefault(entry.BaseName, 0);
 			occurrence++;
 			perNameCount[entry.BaseName] = occurrence;
 			var id = occurrence == 1? entry.BaseName : $"{entry.BaseName}{occurrence}";
@@ -57,7 +68,7 @@ public sealed record SkillSummary(string Id, string Description, string Path)
 					? $"{entry.BaseName}{occurrence}__{folderName}"
 					: $"{entry.BaseName}{occurrence}__{folderName}_{disambiguator}";
 			}
-			result[id] = new SkillSummary(id, entry.Description, entry.SkillDirectory);
+			result[id] = new(id, entry.Description, entry.SkillDirectory);
 			Console.WriteLine($"import {id}");
 		}
 		return result;
@@ -82,7 +93,7 @@ public sealed record SkillSummary(string Id, string Description, string Path)
 				continue;
 			var key = line[..colonIndex].Trim();
 			var value = line[(colonIndex + 1)..].Trim();
-			if(value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+			if(value is ['"', _, ..,] && value[^1] == '"')
 				value = value[1..^1];
 			if(key.Equals("name", StringComparison.OrdinalIgnoreCase))
 				name = value;

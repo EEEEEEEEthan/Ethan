@@ -15,7 +15,7 @@ var userSettingsDirectory = Path.Combine(
 	"Ethan",
 	"Agent");
 var userSettingsFilepath = Path.Combine(userSettingsDirectory, "settings.json");
-List<PersistedChatMessage> messages = [];
+ChatHistory conversation = new();
 var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 var environmentApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 var environmentModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
@@ -45,8 +45,11 @@ if(!string.IsNullOrEmpty(environmentModel))
 if(!string.IsNullOrEmpty(environmentBaseUrl))
 	baseUrl = environmentBaseUrl.TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
-var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
-Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
+var skillHolder = new SkillIndexHolder
+{
+	Index = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots()),
+};
+Console.WriteLine($"已建立技能索引：{skillHolder.Index.Count} 条。");
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 if(string.IsNullOrWhiteSpace(apiKey))
 	Console.WriteLine(
@@ -74,8 +77,8 @@ while(true)
 			   ref apiKey,
 			   ref model,
 			   ref baseUrl,
-			   ref skillIndex,
-			   messages,
+			   skillHolder,
+			   conversation,
 			   out var connectionSettingsTouched))
 			break;
 		if(connectionSettingsTouched)
@@ -129,50 +132,48 @@ while(true)
 			serviceId: null,
 			httpClient: httpClient);
 		activeKernel = builder.Build();
+		activeKernel.ImportPluginFromObject(new SkillLearningPlugin(skillHolder), "skills");
 		lastKernelConfig = new(apiKey, model, baseUrl);
 	}
 	var currentKernel = activeKernel
 		?? throw new InvalidOperationException("内部错误：Kernel 未初始化。");
-	var turnStartIndex = messages.Count;
-	messages.Add(new("user", trimmed));
+	var turnStartCount = conversation.Count;
+	conversation.AddUserMessage(trimmed);
 	try
 	{
 		var chat = currentKernel.GetRequiredService<IChatCompletionService>();
-		var reply = await runStreamingChatTurnAsync(
+		await runStreamingChatTurnAsync(
 			currentKernel,
 			chat,
-			messages);
-		messages.Add(new("assistant", reply ?? string.Empty));
+			conversation,
+			skillHolder);
 	}
 	catch(Exception exception)
 	{
-		if(messages.Count > turnStartIndex)
-			messages.RemoveRange(turnStartIndex, messages.Count - turnStartIndex);
+		while(conversation.Count > turnStartCount)
+			conversation.RemoveAt(conversation.Count - 1);
 		Console.WriteLine($"请求失败：{exception.Message}");
 	}
 }
 return;
+static void refreshSkillSystemMessage(ChatHistory chatHistory, IReadOnlyDictionary<string, SkillSummary> index)
+{
+	if(chatHistory.Count > 0 && chatHistory[0].Role == AuthorRole.System)
+		chatHistory.RemoveAt(0);
+	chatHistory.Insert(0, new(AuthorRole.System, SkillSummary.BuildAgentSystemPrompt(index)));
+}
 static async Task<string?> runStreamingChatTurnAsync(
 	Kernel kernel,
 	IChatCompletionService chatCompletion,
-	IReadOnlyList<PersistedChatMessage> conversation)
+	ChatHistory conversation,
+	SkillIndexHolder skillHolder)
 {
-	var history = new ChatHistory();
-	foreach(var item in conversation)
-		switch(item.Role)
-		{
-			case"user":
-				history.AddUserMessage(item.Content ?? string.Empty);
-				break;
-			case"assistant":
-				history.AddAssistantMessage(item.Content ?? string.Empty);
-				break;
-		}
-	var execution = new OpenAIPromptExecutionSettings();
+	refreshSkillSystemMessage(conversation, skillHolder.Index);
+	var execution = new OpenAIPromptExecutionSettings {ToolCallBehavior = ToolCallBehavior.AutoInvokeKernelFunctions,};
 	var textBuffer = new StringBuilder();
 	var streamPendingCarriageReturn = false;
 	var streaming = chatCompletion.GetStreamingChatMessageContentsAsync(
-		chatHistory: history,
+		chatHistory: conversation,
 		executionSettings: execution,
 		kernel: kernel);
 	await foreach(var part in streaming.ConfigureAwait(false))
@@ -201,8 +202,8 @@ static bool tryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
-	ref Dictionary<string, SkillSummary> skillIndex,
-	List<PersistedChatMessage> messages,
+	SkillIndexHolder skillHolder,
+	ChatHistory conversation,
 	out bool connectionSettingsTouched)
 {
 	static void save(string filepath, string? apiKeyValue, string modelId, string userBase)
@@ -269,12 +270,12 @@ static bool tryHandleSlash(
 			Console.WriteLine($"已设置基础地址：{baseUrl}（已保存）");
 			return true;
 		case"/clear":
-			messages.Clear();
+			conversation.Clear();
 			Console.WriteLine("已清空对话。");
 			return true;
 		case"/update-skills":
-			skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
-			Console.WriteLine($"已重建技能索引：{skillIndex.Count} 条。");
+			skillHolder.Index = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
+			Console.WriteLine($"已重建技能索引：{skillHolder.Index.Count} 条。");
 			return true;
 		case"/exit":
 		case"/quit":
@@ -350,7 +351,6 @@ file sealed record UserChatSettings(
 	[property: JsonPropertyName("baseUrl")]
 	string BaseUrl,
 	[property: JsonPropertyName("model")]string Model);
-file sealed record PersistedChatMessage(string Role, string? Content = null);
 file static class ChatJson
 {
 	internal static readonly JsonSerializerOptions serializer = new()
