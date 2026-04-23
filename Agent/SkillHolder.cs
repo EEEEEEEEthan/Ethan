@@ -2,10 +2,7 @@ using System.Text;
 namespace Agent;
 static class SkillHolder
 {
-	static Dictionary<string, SkillSummary>? backingIndex;
-	public static Dictionary<string, SkillSummary> Index
-		=> backingIndex
-			?? throw new InvalidOperationException("内部错误：尚未调用 SkillHolder.Build。");
+	public static Dictionary<string, (string Id, string Description, string Path)> Index { get { return field ??= BuildIndex(DefaultSkillRepositoryRoots); } private set; }
 	static IEnumerable<string> DefaultSkillRepositoryRoots
 	{
 		get
@@ -16,8 +13,9 @@ static class SkillHolder
 			yield return Path.Combine(userProfile, ".cursor", "skills");
 		}
 	}
-	public static void Build() { backingIndex = BuildIndex(DefaultSkillRepositoryRoots); }
-	public static string BuildAgentSystemPrompt(IReadOnlyDictionary<string, SkillSummary> index)
+	public static void Rebuild() { Index = null!; }
+	public static string BuildAgentSystemPrompt(
+		IReadOnlyDictionary<string, (string Id, string Description, string Path)> index)
 	{
 		var builder = new StringBuilder();
 		builder.AppendLine("可用技能（id 与摘要），新对话请据此选用；需要细则时请调用 learn_skill。");
@@ -28,7 +26,8 @@ static class SkillHolder
 			"工具 learn_skill(skill_id, relative_path?)：relative_path 为相对技能根目录的文件路径；不传时读取 SKILL.md 全文，并附带该技能目录下相对路径列表；传入路径时只返回该文件的完整 UTF-8 文本。");
 		return builder.ToString();
 	}
-	static Dictionary<string, SkillSummary> BuildIndex(IEnumerable<string> skillRepositoryRoots)
+	static Dictionary<string, (string Id, string Description, string Path)> BuildIndex(
+		IEnumerable<string> skillRepositoryRoots)
 	{
 		var orderedEntries = new List<(string SkillDirectory, string BaseName, string Description)>();
 		foreach(var root in skillRepositoryRoots)
@@ -60,7 +59,8 @@ static class SkillHolder
 			}
 		}
 		var perNameCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-		var result = new Dictionary<string, SkillSummary>(StringComparer.OrdinalIgnoreCase);
+		var result = new Dictionary<string, (string Id, string Description, string Path)>(
+			StringComparer.OrdinalIgnoreCase);
 		foreach(var entry in orderedEntries)
 		{
 			var occurrence = perNameCount.GetValueOrDefault(entry.BaseName, 0);
@@ -76,7 +76,7 @@ static class SkillHolder
 					? $"{entry.BaseName}{occurrence}__{folderName}"
 					: $"{entry.BaseName}{occurrence}__{folderName}_{disambiguator}";
 			}
-			result[id] = new(id, entry.Description, entry.SkillDirectory);
+			result[id] = (id, entry.Description, entry.SkillDirectory);
 			Console.WriteLine($"import {id}");
 		}
 		return result;

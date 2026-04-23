@@ -10,10 +10,10 @@ file static class Program
 	{
 		var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 		Console.OutputEncoding = Encoding.UTF8;
-		SkillHolder.Build();
+		SkillHolder.Rebuild();
 		Console.WriteLine($"已建立技能索引：{SkillHolder.Index.Count} 条。");
 		HistoryHolder.New();
-		KernelHolder.Build(httpClient);
+		KernelHolder.Rebuild(httpClient);
 		Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 		if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 			Console.WriteLine(
@@ -60,7 +60,7 @@ file static class Program
 	}
 	static void RefreshSkillSystemMessage(
 		ChatHistory chatHistory,
-		IReadOnlyDictionary<string, SkillSummary> index)
+		IReadOnlyDictionary<string, (string Id, string Description, string Path)> index)
 	{
 		if(chatHistory.Count > 0 && chatHistory[0].Role == AuthorRole.System)
 			chatHistory.RemoveAt(0);

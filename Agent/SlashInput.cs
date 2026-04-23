@@ -66,7 +66,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.ApiKey = argument;
 				UserChatSettings.Persist();
-				KernelHolder.Build(httpClient);
+				KernelHolder.Rebuild(httpClient);
 				Console.WriteLine("已设置 API Key 并已保存。");
 				return true;
 			case"/model":
@@ -77,7 +77,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.Model = argument;
 				UserChatSettings.Persist();
-				KernelHolder.Build(httpClient);
+				KernelHolder.Rebuild(httpClient);
 				Console.WriteLine($"已设置模型：{UserChatSettings.Model}（已保存）");
 				return true;
 			case"/url":
@@ -88,7 +88,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.BaseUrl = argument.TrimEnd('/');
 				UserChatSettings.Persist();
-				KernelHolder.Build(httpClient);
+				KernelHolder.Rebuild(httpClient);
 				Console.WriteLine($"已设置基础地址：{UserChatSettings.BaseUrl}（已保存）");
 				return true;
 			case"/new":
@@ -96,8 +96,8 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				Console.WriteLine("已开始新对话。");
 				return true;
 			case"/update-skills":
-				SkillHolder.Build();
-				KernelHolder.Build(httpClient);
+				SkillHolder.Rebuild();
+				KernelHolder.Rebuild(httpClient);
 				Console.WriteLine($"已重建技能索引：{SkillHolder.Index.Count} 条。");
 				return true;
 			case"/exit":

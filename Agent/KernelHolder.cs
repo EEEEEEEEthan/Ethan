@@ -6,7 +6,7 @@ static class KernelHolder
 	public static Kernel Kernel
 		=> backingKernel
 			?? throw new InvalidOperationException("内部错误：尚未调用 KernelHolder.Build。");
-	public static void Build(HttpClient httpClient)
+	public static void Rebuild(HttpClient httpClient)
 	{
 		var baseText = UserChatSettings.BaseUrl.Trim();
 		var endpoint = baseText.Length == 0

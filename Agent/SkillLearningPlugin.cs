@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Microsoft.SemanticKernel;
 namespace Agent;
-public sealed class SkillLearningPlugin(Dictionary<string, SkillSummary> skillIndex)
+public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string Description, string Path)> skillIndex)
 {
 	const string defaultRelativeFile = "SKILL.md";
 	static bool TryResolveUnderRoot(string skillRootFull, string relativePath, out string absoluteFile, out string error)
