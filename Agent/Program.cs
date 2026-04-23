@@ -64,7 +64,7 @@ file static class Program
 	{
 		if(chatHistory.Count > 0 && chatHistory[0].Role == AuthorRole.System)
 			chatHistory.RemoveAt(0);
-		chatHistory.Insert(0, new(AuthorRole.System, SkillSummary.BuildAgentSystemPrompt(index)));
+		chatHistory.Insert(0, new(AuthorRole.System, SkillHolder.BuildAgentSystemPrompt(index)));
 	}
 	static async Task RunStreamingChatTurnAsync(Kernel kernel, IChatCompletionService chatCompletion)
 	{

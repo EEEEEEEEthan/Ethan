@@ -11,6 +11,6 @@ static class HistoryHolder
 		backingHistory = [];
 		backingHistory.Insert(
 			0,
-			new(AuthorRole.System, SkillSummary.BuildAgentSystemPrompt(SkillHolder.Index)));
+			new(AuthorRole.System, SkillHolder.BuildAgentSystemPrompt(SkillHolder.Index)));
 	}
 }
