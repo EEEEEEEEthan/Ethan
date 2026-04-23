@@ -6,12 +6,11 @@ using PrettyPrompt.Completion;
 using PrettyPrompt.Consoles;
 using PrettyPrompt.Documents;
 using PrettyPrompt.Highlighting;
-const string defaultBaseUrl = "https://api.openai.com";
 var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
-var messages = new List<ChatMessage>();
+List<ChatMessage> messages = [];
 var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
 var model = Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? "gpt-4o-mini";
-var baseUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? defaultBaseUrl).TrimEnd('/');
+var baseUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? "https://api.openai.com").TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 if(string.IsNullOrWhiteSpace(apiKey))
@@ -31,13 +30,7 @@ while(true)
 		continue;
 	if(trimmed.StartsWith("/", StringComparison.Ordinal))
 	{
-		if(!TryHandleSlash(
-			   trimmed,
-			   ref apiKey,
-			   ref model,
-			   ref baseUrl,
-			   messages,
-			   httpClient))
+		if(!TryHandleSlash(trimmed, ref apiKey, ref model, ref baseUrl, messages))
 			break;
 		continue;
 	}
@@ -69,12 +62,11 @@ static bool TryHandleSlash(
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
-	List<ChatMessage> messages,
-	HttpClient httpClient)
+	List<ChatMessage> messages)
 {
 	var spaceIndex = trimmed.IndexOf(' ');
-	var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
-	var argument = spaceIndex < 0? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
+	var command = spaceIndex < 0 ? trimmed : trimmed[..spaceIndex];
+	var argument = spaceIndex < 0 ? string.Empty : trimmed[(spaceIndex + 1)..].Trim();
 	switch(command.ToLowerInvariant())
 	{
 		case"/help":
@@ -129,23 +121,6 @@ static bool TryHandleSlash(
 			return true;
 	}
 }
-static string ResolveChatCompletionsEndpoint(string baseUrl)
-{
-	var trimmed = baseUrl.TrimEnd('/');
-	if(trimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
-	   || trimmed.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
-		return trimmed;
-	if(trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-		return$"{trimmed}/chat/completions";
-	if(trimmed.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-	   && trimmed.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-	{
-		if(trimmed.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
-			trimmed = trimmed[..^"/responses".Length];
-		return$"{trimmed}/chat/completions";
-	}
-	return$"{trimmed}/v1/chat/completions";
-}
 static async Task<string> CompleteChatAsync(
 	HttpClient httpClient,
 	string baseUrl,
@@ -154,8 +129,23 @@ static async Task<string> CompleteChatAsync(
 	IReadOnlyList<ChatMessage> messages)
 {
 	var payload = new ChatCompletionRequest(model, messages.Select(static message => new ChatMessageDto(message.Role, message.Content)).ToList());
-	var json = JsonSerializer.Serialize(payload, JsonOptions.Serializer);
-	var endpoint = ResolveChatCompletionsEndpoint(baseUrl);
+	var json = JsonSerializer.Serialize(payload, ChatJson.Serializer);
+	var trimmedUrl = baseUrl.TrimEnd('/');
+	string endpoint;
+	if(trimmedUrl.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)
+	   || trimmedUrl.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
+		endpoint = trimmedUrl;
+	else if(trimmedUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+		endpoint = $"{trimmedUrl}/chat/completions";
+	else if(trimmedUrl.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
+	        && trimmedUrl.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
+	{
+		if(trimmedUrl.EndsWith("/responses", StringComparison.OrdinalIgnoreCase))
+			trimmedUrl = trimmedUrl[..^"/responses".Length];
+		endpoint = $"{trimmedUrl}/chat/completions";
+	}
+	else
+		endpoint = $"{trimmedUrl}/v1/chat/completions";
 	using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
 	request.Headers.Authorization = new("Bearer", apiKey);
 	request.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -182,9 +172,9 @@ sealed record ChatCompletionRequest(
 	[property: JsonPropertyName("model")]string Model,
 	[property: JsonPropertyName("messages")]
 	IReadOnlyList<ChatMessageDto> Messages);
-file static class JsonOptions
+file static class ChatJson
 {
-	public static readonly JsonSerializerOptions Serializer = new()
+	internal static readonly JsonSerializerOptions Serializer = new()
 	{
 		PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
 		DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -192,25 +182,20 @@ file static class JsonOptions
 }
 file sealed class SlashPromptCallbacks: PromptCallbacks
 {
-	static readonly (string Replacement, string Caption)[] SlashCommands =
+	static readonly CompletionItem[] SlashCompletionItems =
 	[
-		("/apikey ", "设置 API Key"),
-		("/model ", "设置模型 id"),
-		("/url ", "OpenAI 兼容根地址"),
-		("/clear", "清空对话上下文"),
-		("/help", "指令说明"),
-		("/?", "同 /help"),
-		("/exit", "退出"),
-		("/quit", "退出"),
+		new SlashCompletionItem("/apikey ", "设置 API Key"),
+		new SlashCompletionItem("/model ", "设置模型 id"),
+		new SlashCompletionItem("/url ", "OpenAI 兼容根地址"),
+		new SlashCompletionItem("/clear", "清空对话上下文"),
+		new SlashCompletionItem("/help", "指令说明"),
+		new SlashCompletionItem("/?", "同 /help"),
+		new SlashCompletionItem("/exit", "退出"),
+		new SlashCompletionItem("/quit", "退出"),
 	];
-	static bool IsSlashCommandToken(string text, int caret)
-	{
-		var tokenStart = GetTokenStartIndex(text, caret);
-		return tokenStart < text.Length && text[tokenStart] == '/';
-	}
 	static int GetTokenStartIndex(string text, int caret)
 	{
-		var limit = caret > 0? caret - 1 : -1;
+		var limit = caret > 0 ? caret - 1 : -1;
 		for(var index = limit; index >= 0; index--)
 			if(text[index] is' ' or'\t')
 				return index + 1;
@@ -238,10 +223,7 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		var token = text.AsSpan(spanToBeReplaced);
 		if(token.Length == 0 || token[0] != '/')
 			return Task.FromResult<IReadOnlyList<CompletionItem>>(Array.Empty<CompletionItem>());
-		var items = SlashCommands
-			.Select(static entry => new SlashCompletionItem(entry.Replacement, entry.Caption))
-			.ToArray();
-		return Task.FromResult<IReadOnlyList<CompletionItem>>(items);
+		return Task.FromResult<IReadOnlyList<CompletionItem>>(SlashCompletionItems);
 	}
 	protected override Task<bool> ShouldOpenCompletionWindowAsync(
 		string text,
@@ -249,9 +231,10 @@ file sealed class SlashPromptCallbacks: PromptCallbacks
 		KeyPress keyPress,
 		CancellationToken cancellationToken)
 	{
-		if(caret > 0 && IsSlashCommandToken(text, caret))
-			return Task.FromResult(true);
-		return Task.FromResult(false);
+		if(caret <= 0)
+			return Task.FromResult(false);
+		var tokenStart = GetTokenStartIndex(text, caret);
+		return Task.FromResult(tokenStart < text.Length && text[tokenStart] == '/');
 	}
 }
 file sealed class SlashCompletionItem: CompletionItem
