@@ -6,21 +6,6 @@ using PrettyPrompt;
 namespace Agent;
 file static class Program
 {
-	sealed class KernelConfigSnapshot(
-		string? apiKeySnapshot,
-		string modelIdSnapshot,
-		string userBaseUrlSnapshot)
-	{
-		public bool MatchesCurrent(string? key, string currentModel, string currentBase)
-		{
-			return key == apiKeySnapshot
-				&& currentModel == modelIdSnapshot
-				&& string.Equals(
-					currentBase.TrimEnd('/'),
-					userBaseUrlSnapshot.TrimEnd('/'),
-					StringComparison.Ordinal);
-		}
-	}
 	static async Task Main()
 	{
 		ChatHistory conversation = [];
@@ -28,6 +13,7 @@ file static class Program
 		Console.OutputEncoding = Encoding.UTF8;
 		var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
 		Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
+		KernelHolder.Build(httpClient, skillIndex);
 		Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 		if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 			Console.WriteLine(
@@ -37,8 +23,6 @@ file static class Program
 			persistentHistoryFilepath: null,
 			callbacks: new SlashPromptCallbacks(),
 			configuration: promptConfiguration);
-		Kernel? activeKernel = null;
-		KernelConfigSnapshot? lastKernelConfig = null;
 		while(true)
 		{
 			var result = await prompt.ReadLineAsync();
@@ -56,10 +40,7 @@ file static class Program
 					   out var connectionSettingsTouched))
 					break;
 				if(connectionSettingsTouched)
-				{
-					activeKernel = null;
-					lastKernelConfig = null;
-				}
+					KernelHolder.Build(httpClient, skillIndex);
 				continue;
 			}
 			if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
@@ -67,31 +48,7 @@ file static class Program
 				Console.WriteLine("请先 /apikey <你的密钥>");
 				continue;
 			}
-			if(lastKernelConfig is null
-			   || !lastKernelConfig.MatchesCurrent(
-				   UserChatSettings.ApiKey,
-				   UserChatSettings.Model,
-				   UserChatSettings.BaseUrl)
-			   || activeKernel is null)
-			{
-				var baseText = UserChatSettings.BaseUrl.Trim();
-				var endpoint = baseText.Length == 0
-					? new("https://api.openai.com/v1", UriKind.Absolute)
-					: new Uri(baseText, UriKind.Absolute);
-				var builder = Kernel.CreateBuilder();
-				builder.AddOpenAIChatCompletion(
-					modelId: UserChatSettings.Model,
-					endpoint: endpoint,
-					apiKey: UserChatSettings.ApiKey,
-					orgId: null,
-					serviceId: null,
-					httpClient: httpClient);
-				activeKernel = builder.Build();
-				activeKernel.ImportPluginFromObject(new SkillLearningPlugin(skillIndex), "skills");
-				lastKernelConfig = new(UserChatSettings.ApiKey, UserChatSettings.Model, UserChatSettings.BaseUrl);
-			}
-			var currentKernel = activeKernel
-				?? throw new InvalidOperationException("内部错误：Kernel 未初始化。");
+			var currentKernel = KernelHolder.Kernel;
 			var turnStartCount = conversation.Count;
 			conversation.AddUserMessage(trimmed);
 			try
