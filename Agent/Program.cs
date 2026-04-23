@@ -52,30 +52,10 @@ while(true)
 	   || !lastKernelConfig.MatchesCurrent(UserChatSettings.ApiKey, UserChatSettings.Model, UserChatSettings.BaseUrl)
 	   || activeKernel is null)
 	{
-		Uri endpoint;
-		var working = UserChatSettings.BaseUrl.TrimEnd('/');
-		if(working.Length == 0)
-			endpoint = new("https://api.openai.com/v1", UriKind.Absolute);
-		else
-		{
-			if(working.EndsWith("/responses", StringComparison.OrdinalIgnoreCase)
-			   && working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-			   && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-				working = working[..^"/responses".Length].TrimEnd('/');
-			if(working.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) || working.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-				endpoint = new(working[..^"/chat/completions".Length], UriKind.Absolute);
-			else if(working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-			        && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase) || working.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-				endpoint = new(working, UriKind.Absolute);
-			else if(Uri.TryCreate(working, UriKind.Absolute, out var openAiCheck)
-			        && string.Equals(openAiCheck.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
-			        && (string.IsNullOrEmpty(openAiCheck.AbsolutePath) || openAiCheck.AbsolutePath == "/"))
-				endpoint = new("https://api.openai.com/v1", UriKind.Absolute);
-			else if(Uri.TryCreate(working + "/v1", UriKind.Absolute, out var withV1))
-				endpoint = withV1;
-			else
-				endpoint = new(working, UriKind.Absolute);
-		}
+		var baseText = UserChatSettings.BaseUrl.Trim();
+		var endpoint = baseText.Length == 0
+			? new Uri("https://api.openai.com/v1", UriKind.Absolute)
+			: new Uri(baseText, UriKind.Absolute);
 		var builder = Kernel.CreateBuilder();
 		builder.AddOpenAIChatCompletion(
 			modelId: UserChatSettings.Model,
