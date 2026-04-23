@@ -8,12 +8,11 @@ file static class Program
 {
 	static async Task Main()
 	{
-		var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 		Console.OutputEncoding = Encoding.UTF8;
 		SkillHolder.Rebuild();
 		Console.WriteLine($"已建立技能索引：{SkillHolder.Index.Count} 条。");
 		HistoryHolder.New();
-		KernelHolder.Rebuild(httpClient);
+		KernelHolder.Rebuild();
 		Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 		if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 			Console.WriteLine(
@@ -33,7 +32,7 @@ file static class Program
 				continue;
 			if(trimmed.StartsWith('/'))
 			{
-				if(!SlashPromptCallbacks.TryHandleLine(trimmed, httpClient))
+				if(!SlashPromptCallbacks.TryHandleLine(trimmed))
 					break;
 				continue;
 			}

@@ -36,7 +36,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 		new SlashCompletionItem(completeExit, captionExit),
 		new SlashCompletionItem(completeQuit, captionQuit),
 	];
-	public static bool TryHandleLine(string trimmed, HttpClient httpClient)
+	public static bool TryHandleLine(string trimmed)
 	{
 		var spaceIndex = trimmed.IndexOf(' ');
 		var command = spaceIndex < 0? trimmed : trimmed[..spaceIndex];
@@ -66,7 +66,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.ApiKey = argument;
 				UserChatSettings.Persist();
-				KernelHolder.Rebuild(httpClient);
+				KernelHolder.Rebuild();
 				Console.WriteLine("已设置 API Key 并已保存。");
 				return true;
 			case"/model":
@@ -77,7 +77,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.Model = argument;
 				UserChatSettings.Persist();
-				KernelHolder.Rebuild(httpClient);
+				KernelHolder.Rebuild();
 				Console.WriteLine($"已设置模型：{UserChatSettings.Model}（已保存）");
 				return true;
 			case"/url":
@@ -88,7 +88,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				}
 				UserChatSettings.BaseUrl = argument.TrimEnd('/');
 				UserChatSettings.Persist();
-				KernelHolder.Rebuild(httpClient);
+				KernelHolder.Rebuild();
 				Console.WriteLine($"已设置基础地址：{UserChatSettings.BaseUrl}（已保存）");
 				return true;
 			case"/new":
@@ -97,7 +97,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				return true;
 			case"/update-skills":
 				SkillHolder.Rebuild();
-				KernelHolder.Rebuild(httpClient);
+				KernelHolder.Rebuild();
 				Console.WriteLine($"已重建技能索引：{SkillHolder.Index.Count} 条。");
 				return true;
 			case"/exit":
