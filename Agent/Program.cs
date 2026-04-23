@@ -6,15 +6,50 @@ using PrettyPrompt.Completion;
 using PrettyPrompt.Consoles;
 using PrettyPrompt.Documents;
 using PrettyPrompt.Highlighting;
+var userSettingsDirectory = Path.Combine(
+	Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+	"Ethan",
+	"Agent");
+var userSettingsFilepath = Path.Combine(userSettingsDirectory, "settings.json");
 var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
 List<ChatMessage> messages = [];
-var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-var model = Environment.GetEnvironmentVariable("OPENAI_MODEL") ?? "gpt-4o-mini";
-var baseUrl = (Environment.GetEnvironmentVariable("OPENAI_BASE_URL") ?? "https://api.openai.com").TrimEnd('/');
+var environmentApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+var environmentModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+var environmentBaseUrl = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
+string? apiKey = null;
+var model = "gpt-4o-mini";
+var baseUrl = "https://api.openai.com";
+if(File.Exists(userSettingsFilepath))
+{
+	try
+	{
+		var jsonText = File.ReadAllText(userSettingsFilepath);
+		var loaded = JsonSerializer.Deserialize<UserChatSettings>(jsonText, ChatJson.serializer);
+		if(loaded is not null)
+		{
+			apiKey = loaded.ApiKey;
+			if(!string.IsNullOrWhiteSpace(loaded.Model))
+				model = loaded.Model;
+			if(!string.IsNullOrWhiteSpace(loaded.BaseUrl))
+				baseUrl = loaded.BaseUrl.TrimEnd('/');
+		}
+	}
+	catch(JsonException)
+	{
+		Console.WriteLine($"提示：配置文件格式无效，已忽略：{userSettingsFilepath}");
+	}
+}
+if(!string.IsNullOrEmpty(environmentApiKey))
+	apiKey = environmentApiKey;
+if(!string.IsNullOrEmpty(environmentModel))
+	model = environmentModel;
+if(!string.IsNullOrEmpty(environmentBaseUrl))
+	baseUrl = environmentBaseUrl.TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
 if(string.IsNullOrWhiteSpace(apiKey))
-	Console.WriteLine("提示：尚未设置 API Key，可用 /apikey <密钥> 或环境变量 OPENAI_API_KEY。");
+	Console.WriteLine(
+		$"提示：尚未设置 API Key，可用 /apikey <密钥> 或环境变量 OPENAI_API_KEY；配置保存于 {userSettingsFilepath}。");
 var promptConfiguration = new PromptConfiguration(prompt: "> ");
 await using var prompt = new Prompt(
 	persistentHistoryFilepath: null,
@@ -32,6 +67,7 @@ while(true)
 	{
 		if(!tryHandleSlash(
 			   trimmed,
+			   userSettingsFilepath,
 			   ref apiKey,
 			   ref model,
 			   ref baseUrl,
@@ -65,6 +101,7 @@ while(true)
 return;
 static bool tryHandleSlash(
 	string trimmed,
+	string userSettingsFilepath,
 	ref string? apiKey,
 	ref string model,
 	ref string baseUrl,
@@ -79,11 +116,12 @@ static bool tryHandleSlash(
 		case"/?":
 			Console.WriteLine(
 				"""
-				/apikey <密钥>     设置 API Key（仅内存，不落盘）
-				/model <名称>      设置模型 id，如 gpt-4o-mini
-				/url <基础地址>    网关根地址。OpenAI 默认根 https://api.openai.com（请求 …/v1/chat/completions）
+				/apikey <密钥>     设置 API Key 并写入用户配置目录
+				/model <名称>      设置模型 id 并保存，如 gpt-4o-mini
+				/url <基础地址>    网关根地址并保存。OpenAI 默认根 https://api.openai.com（请求 …/v1/chat/completions）
 				                   火山方舟填 https://ark.cn-beijing.volces.com/api/v3（勿用 /responses），请求 …/api/v3/chat/completions
 				                   若已含完整路径 …/chat/completions 则原样使用
+				环境变量 OPENAI_* 若已设置则优先于配置文件
 				/clear             清空本轮对话上下文
 				/exit 或 /quit     退出
 				""");
@@ -95,7 +133,8 @@ static bool tryHandleSlash(
 				return true;
 			}
 			apiKey = argument;
-			Console.WriteLine("已设置 API Key。");
+			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			Console.WriteLine("已设置 API Key 并已保存。");
 			return true;
 		case"/model":
 			if(argument.Length == 0)
@@ -104,7 +143,8 @@ static bool tryHandleSlash(
 				return true;
 			}
 			model = argument;
-			Console.WriteLine($"已设置模型：{model}");
+			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			Console.WriteLine($"已设置模型：{model}（已保存）");
 			return true;
 		case"/url":
 			if(argument.Length == 0)
@@ -113,7 +153,8 @@ static bool tryHandleSlash(
 				return true;
 			}
 			baseUrl = argument.TrimEnd('/');
-			Console.WriteLine($"已设置基础地址：{baseUrl}");
+			saveUserChatSettings(userSettingsFilepath, apiKey, model, baseUrl);
+			Console.WriteLine($"已设置基础地址：{baseUrl}（已保存）");
 			return true;
 		case"/clear":
 			messages.Clear();
@@ -126,6 +167,15 @@ static bool tryHandleSlash(
 			Console.WriteLine($"未知指令：{command}，输入 /help 查看列表。");
 			return true;
 	}
+}
+static void saveUserChatSettings(string filepath, string? apiKey, string model, string baseUrl)
+{
+	var parentDirectory = Path.GetDirectoryName(filepath);
+	if(!string.IsNullOrEmpty(parentDirectory))
+		Directory.CreateDirectory(parentDirectory);
+	var payload = new UserChatSettings(apiKey, baseUrl.TrimEnd('/'), model);
+	var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
+	File.WriteAllText(filepath, jsonText);
 }
 static async Task<string> completeChatAsync(
 	HttpClient httpClient,
@@ -169,6 +219,10 @@ static async Task<string> completeChatAsync(
 	var content = messageElement.GetProperty("content").GetString() ?? string.Empty;
 	return content;
 }
+file sealed record UserChatSettings(
+	[property: JsonPropertyName("apiKey")]string? ApiKey,
+	[property: JsonPropertyName("baseUrl")]string BaseUrl,
+	[property: JsonPropertyName("model")]string Model);
 file sealed record ChatMessage(string Role, string Content);
 // ReSharper disable NotAccessedPositionalProperty.Local
 file sealed record ChatMessageDto(
