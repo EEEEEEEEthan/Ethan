@@ -247,6 +247,7 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 	using var lineReader = new StreamReader(bodyStream, Encoding.UTF8);
 	var contentBuilder = new StringBuilder();
 	var toolCallAccumulators = new Dictionary<int, StreamingToolCallAccumulator>();
+	var streamPendingCarriageReturn = false;
 	string? finishReason = null;
 	while(!lineReader.EndOfStream)
 	{
@@ -296,7 +297,7 @@ static async Task<ChatCompletionTurnResult> sendChatCompletionTurnAsync(
 				if(!string.IsNullOrEmpty(piece))
 				{
 					contentBuilder.Append(piece);
-					Console.Write(piece);
+					Console.Write(formatTextForWindowsConsolePiece(piece, ref streamPendingCarriageReturn));
 					Console.Out.Flush();
 				}
 			}
@@ -419,8 +420,66 @@ static JsonArray buildOpenAiMessagesArray(IReadOnlyList<PersistedChatMessage> co
 	}
 	return messagesArray;
 }
+/// <summary>流式片段：Windows 控制台遇裸 LF 常不换列首；与跨分片的 CR+LF 拼合一并处理。</summary>
+static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
+{
+	if(segment.Length == 0)
+		return string.Empty;
+	if(Environment.NewLine is not "\r\n")
+		return segment;
+	if(!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0)
+		return segment;
+	var builder = new StringBuilder(segment.Length + 4);
+	if(pendingCarriageReturn)
+	{
+		pendingCarriageReturn = false;
+		if(segment[0] == '\n')
+		{
+			builder.Append("\r\n");
+			segment = segment[1..];
+		}
+		else
+			builder.Append('\r');
+	}
+	if(segment.Length == 0)
+		return builder.ToString();
+	for(var index = 0; index < segment.Length; index++)
+	{
+		var character = segment[index];
+		switch(character)
+		{
+			case'\r':
+				if(index + 1 < segment.Length && segment[index + 1] == '\n')
+				{
+					builder.Append("\r\n");
+					index++;
+				}
+				else if(index == segment.Length - 1)
+					pendingCarriageReturn = true;
+				else
+					builder.Append('\r');
+				break;
+			case'\n':
+				builder.Append("\r\n");
+				break;
+			default:
+				builder.Append(character);
+				break;
+		}
+	}
+	return builder.ToString();
+}
+
+static string normalizeTextForWindowsConsoleWrite(string text)
+{
+	if(text.Length == 0 || Environment.NewLine is not "\r\n")
+		return text;
+	return text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\n", "\r\n", StringComparison.Ordinal);
+}
+
 static void writeStreamingConsole(string text)
 {
+	text = normalizeTextForWindowsConsoleWrite(text);
 	const int chunkSize = 4096;
 	for(var offset = 0; offset < text.Length; offset += chunkSize)
 	{
