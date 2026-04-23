@@ -1,51 +1,18 @@
 ﻿using System.Text;
-using System.Text.Json;
 using Agent;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.ChatCompletion;
 using Microsoft.SemanticKernel.Connectors.OpenAI;
 using PrettyPrompt;
-var userSettingsDirectory = Path.Combine(
-	Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-	"Ethan",
-	"Agent");
-var userSettingsFilepath = Path.Combine(userSettingsDirectory, "settings.json");
 ChatHistory conversation = [];
 var httpClient = new HttpClient {Timeout = TimeSpan.FromMinutes(5),};
-var environmentApiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-var environmentModel = Environment.GetEnvironmentVariable("OPENAI_MODEL");
-var environmentBaseUrl = Environment.GetEnvironmentVariable("OPENAI_BASE_URL");
-string? apiKey = null;
-var model = "gpt-4o-mini";
-var baseUrl = "https://api.openai.com";
-if(File.Exists(userSettingsFilepath))
-	try
-	{
-		var jsonText = File.ReadAllText(userSettingsFilepath);
-		var loaded = JsonSerializer.Deserialize<UserChatSettings>(jsonText, ChatJson.serializer);
-		if(loaded is {})
-		{
-			apiKey = loaded.ApiKey;
-			if(!string.IsNullOrWhiteSpace(loaded.Model))
-				model = loaded.Model;
-			if(!string.IsNullOrWhiteSpace(loaded.BaseUrl))
-				baseUrl = loaded.BaseUrl.TrimEnd('/');
-		}
-	}
-	catch(JsonException) { Console.WriteLine($"提示：配置文件格式无效，已忽略：{userSettingsFilepath}"); }
-if(!string.IsNullOrEmpty(environmentApiKey))
-	apiKey = environmentApiKey;
-if(!string.IsNullOrEmpty(environmentModel))
-	model = environmentModel;
-if(!string.IsNullOrEmpty(environmentBaseUrl))
-	baseUrl = environmentBaseUrl.TrimEnd('/');
 Console.OutputEncoding = Encoding.UTF8;
 var skillIndex = SkillSummary.BuildIndex(SkillSummary.DefaultSkillRepositoryRoots());
 Console.WriteLine($"已建立技能索引：{skillIndex.Count} 条。");
 Console.WriteLine("聊天 AI。行内以 / 开头弹出斜杠补全；列表未收起时可按 Esc。");
-if(string.IsNullOrWhiteSpace(apiKey))
+if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 	Console.WriteLine(
-		$"提示：尚未设置 API Key，可用 /apikey <密钥> 或环境变量 OPENAI_API_KEY；配置保存于 {userSettingsFilepath}。");
+		$"提示：尚未设置 API Key，可用 /apikey <密钥> 或环境变量 OPENAI_API_KEY；配置保存于 {UserChatSettings.SettingsFilepath}。");
 var promptConfiguration = new PromptConfiguration(prompt: "> ");
 await using var prompt = new Prompt(
 	persistentHistoryFilepath: null,
@@ -65,10 +32,6 @@ while(true)
 	{
 		if(!SlashPromptCallbacks.TryHandleLine(
 			   trimmed,
-			   userSettingsFilepath,
-			   ref apiKey,
-			   ref model,
-			   ref baseUrl,
 			   skillIndex,
 			   conversation,
 			   out var connectionSettingsTouched))
@@ -80,15 +43,17 @@ while(true)
 		}
 		continue;
 	}
-	if(string.IsNullOrWhiteSpace(apiKey))
+	if(string.IsNullOrWhiteSpace(UserChatSettings.ApiKey))
 	{
 		Console.WriteLine("请先 /apikey <你的密钥>");
 		continue;
 	}
-	if(lastKernelConfig is null || !lastKernelConfig.MatchesCurrent(apiKey, model, baseUrl) || activeKernel is null)
+	if(lastKernelConfig is null
+	   || !lastKernelConfig.MatchesCurrent(UserChatSettings.ApiKey, UserChatSettings.Model, UserChatSettings.BaseUrl)
+	   || activeKernel is null)
 	{
 		Uri endpoint;
-		var working = baseUrl.TrimEnd('/');
+		var working = UserChatSettings.BaseUrl.TrimEnd('/');
 		if(working.Length == 0)
 			endpoint = new("https://api.openai.com/v1", UriKind.Absolute);
 		else
@@ -97,14 +62,10 @@ while(true)
 			   && working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
 			   && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
 				working = working[..^"/responses".Length].TrimEnd('/');
-			if(working.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase))
-				endpoint = new(working[..^"/chat/completions".Length], UriKind.Absolute);
-			else if(working.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+			if(working.EndsWith("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) || working.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
 				endpoint = new(working[..^"/chat/completions".Length], UriKind.Absolute);
 			else if(working.Contains("volces.com", StringComparison.OrdinalIgnoreCase)
-			        && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase))
-				endpoint = new(working, UriKind.Absolute);
-			else if(working.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+			        && working.Contains("/api/v3", StringComparison.OrdinalIgnoreCase) || working.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
 				endpoint = new(working, UriKind.Absolute);
 			else if(Uri.TryCreate(working, UriKind.Absolute, out var openAiCheck)
 			        && string.Equals(openAiCheck.Host, "api.openai.com", StringComparison.OrdinalIgnoreCase)
@@ -117,15 +78,15 @@ while(true)
 		}
 		var builder = Kernel.CreateBuilder();
 		builder.AddOpenAIChatCompletion(
-			modelId: model,
+			modelId: UserChatSettings.Model,
 			endpoint: endpoint,
-			apiKey: apiKey,
+			apiKey: UserChatSettings.ApiKey,
 			orgId: null,
 			serviceId: null,
 			httpClient: httpClient);
 		activeKernel = builder.Build();
 		activeKernel.ImportPluginFromObject(new SkillLearningPlugin(skillIndex), "skills");
-		lastKernelConfig = new(apiKey, model, baseUrl);
+		lastKernelConfig = new(UserChatSettings.ApiKey, UserChatSettings.Model, UserChatSettings.BaseUrl);
 	}
 	var currentKernel = activeKernel
 		?? throw new InvalidOperationException("内部错误：Kernel 未初始化。");

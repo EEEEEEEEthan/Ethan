@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.SemanticKernel.ChatCompletion;
 using PrettyPrompt;
 using PrettyPrompt.Completion;
@@ -40,10 +39,6 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 	];
 	public static bool TryHandleLine(
 		string trimmed,
-		string userSettingsFilepath,
-		ref string? apiKey,
-		ref string model,
-		ref string baseUrl,
 		Dictionary<string, SkillSummary> skillIndex,
 		ChatHistory conversation,
 		out bool connectionSettingsTouched)
@@ -75,9 +70,9 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					Console.WriteLine("用法：/apikey <密钥>");
 					return true;
 				}
-				apiKey = argument;
+				UserChatSettings.ApiKey = argument;
 				connectionSettingsTouched = true;
-				SaveUserSettings(userSettingsFilepath, apiKey, model, baseUrl);
+				UserChatSettings.Persist();
 				Console.WriteLine("已设置 API Key 并已保存。");
 				return true;
 			case"/model":
@@ -86,10 +81,10 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					Console.WriteLine("用法：/model <模型id>");
 					return true;
 				}
-				model = argument;
+				UserChatSettings.Model = argument;
 				connectionSettingsTouched = true;
-				SaveUserSettings(userSettingsFilepath, apiKey, model, baseUrl);
-				Console.WriteLine($"已设置模型：{model}（已保存）");
+				UserChatSettings.Persist();
+				Console.WriteLine($"已设置模型：{UserChatSettings.Model}（已保存）");
 				return true;
 			case"/url":
 				if(argument.Length == 0)
@@ -97,10 +92,10 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					Console.WriteLine("用法：/url <根地址>（无尾 /；方舟用 …/api/v3，勿填 …/responses）");
 					return true;
 				}
-				baseUrl = argument.TrimEnd('/');
+				UserChatSettings.BaseUrl = argument.TrimEnd('/');
 				connectionSettingsTouched = true;
-				SaveUserSettings(userSettingsFilepath, apiKey, model, baseUrl);
-				Console.WriteLine($"已设置基础地址：{baseUrl}（已保存）");
+				UserChatSettings.Persist();
+				Console.WriteLine($"已设置基础地址：{UserChatSettings.BaseUrl}（已保存）");
 				return true;
 			case"/clear":
 				conversation.Clear();
@@ -122,19 +117,6 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 				Console.WriteLine($"未知指令：{command}，输入 /help 查看列表。");
 				return true;
 		}
-	}
-	static void SaveUserSettings(
-		string filepath,
-		string? apiKeyValue,
-		string modelId,
-		string userBase)
-	{
-		var parentDirectory = Path.GetDirectoryName(filepath);
-		if(!string.IsNullOrEmpty(parentDirectory))
-			Directory.CreateDirectory(parentDirectory);
-		var payload = new UserChatSettings(apiKeyValue, userBase.TrimEnd('/'), modelId);
-		var jsonText = JsonSerializer.Serialize(payload, ChatJson.serializer);
-		File.WriteAllText(filepath, jsonText);
 	}
 	static int GetTokenStartIndex(string text, int caret)
 	{
