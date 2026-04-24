@@ -145,7 +145,10 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
 		EnsureConsoleOnNewLineBeforeToolLog();
+		var color = Console.ForegroundColor;
+		Console.ForegroundColor = ConsoleColor.DarkGray;
 		Console.WriteLine($"[learn {skill_id} {relative_path}]");
+		Console.ForegroundColor = color;
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var useImplicitDefault = string.IsNullOrWhiteSpace(relative_path);
 		var relativeSegment = useImplicitDefault? defaultRelativeFile : relative_path!.Trim().TrimStart('/', '\\');
@@ -180,7 +183,10 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
 		EnsureConsoleOnNewLineBeforeToolLog();
+		var color = Console.ForegroundColor;
+		Console.ForegroundColor = ConsoleColor.DarkGray;
 		Console.WriteLine($"[run_skill_script {skill_id} {relative_path}]");
+		Console.ForegroundColor = color;
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var relativeSegment = relative_path.Trim().TrimStart('/', '\\');
 		if(string.IsNullOrEmpty(relativeSegment))
