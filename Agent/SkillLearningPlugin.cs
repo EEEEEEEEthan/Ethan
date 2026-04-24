@@ -16,8 +16,14 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 			if(Console.CursorLeft != 0)
 				Console.WriteLine();
 		}
-		catch(IOException) { /* 无控制台 */ }
-		catch(InvalidOperationException) { /* 无控制台 */ }
+		catch(IOException)
+		{
+			/* 无控制台 */
+		}
+		catch(InvalidOperationException)
+		{
+			/* 无控制台 */
+		}
 	}
 	static bool TryResolveUnderRoot(string skillRootFull, string relativePath, out string absoluteFile, out string error)
 	{
@@ -62,7 +68,12 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		catch(IOException exception) { return$"(列出失败：{exception.Message})"; }
 		catch(UnauthorizedAccessException exception) { return$"(列出失败：{exception.Message})"; }
 	}
-	static bool TryConfigureScriptLaunch(string absoluteScriptPath, string skillRootFull, string[] tailArguments, out ProcessStartInfo startInfo, out string error)
+	static bool TryConfigureScriptLaunch(
+		string absoluteScriptPath,
+		string skillRootFull,
+		string[] tailArguments,
+		out ProcessStartInfo startInfo,
+		out string error)
 	{
 		startInfo = new()
 		{
@@ -76,57 +87,55 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		var extension = Path.GetExtension(absoluteScriptPath);
 		switch(extension.ToLowerInvariant())
 		{
-		case".ps1":
-			startInfo.FileName = "powershell.exe";
-			startInfo.ArgumentList.Add("-NoProfile");
-			startInfo.ArgumentList.Add("-ExecutionPolicy");
-			startInfo.ArgumentList.Add("Bypass");
-			startInfo.ArgumentList.Add("-File");
-			startInfo.ArgumentList.Add(absoluteScriptPath);
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		case".cmd":
-		case".bat":
-			startInfo.FileName = "cmd.exe";
-			startInfo.ArgumentList.Add("/c");
-			startInfo.ArgumentList.Add(absoluteScriptPath);
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		case".py":
-			startInfo.FileName = "python";
-			startInfo.ArgumentList.Add(absoluteScriptPath);
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		case".js":
-			startInfo.FileName = "node";
-			startInfo.ArgumentList.Add(absoluteScriptPath);
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		case".sh":
-			startInfo.FileName = "bash";
-			startInfo.ArgumentList.Add(absoluteScriptPath);
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		case".exe":
-			startInfo.FileName = absoluteScriptPath;
-			foreach(var segment in tailArguments)
-				startInfo.ArgumentList.Add(segment);
-			return true;
-		default:
-			error = $"错误：不支持的脚本扩展名「{extension}」。支持：.ps1 .bat .cmd .py .js .sh .exe";
-			return false;
+			case".ps1":
+				startInfo.FileName = "powershell.exe";
+				startInfo.ArgumentList.Add("-NoProfile");
+				startInfo.ArgumentList.Add("-ExecutionPolicy");
+				startInfo.ArgumentList.Add("Bypass");
+				startInfo.ArgumentList.Add("-File");
+				startInfo.ArgumentList.Add(absoluteScriptPath);
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			case".cmd":
+			case".bat":
+				startInfo.FileName = "cmd.exe";
+				startInfo.ArgumentList.Add("/c");
+				startInfo.ArgumentList.Add(absoluteScriptPath);
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			case".py":
+				startInfo.FileName = "python";
+				startInfo.ArgumentList.Add(absoluteScriptPath);
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			case".js":
+				startInfo.FileName = "node";
+				startInfo.ArgumentList.Add(absoluteScriptPath);
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			case".sh":
+				startInfo.FileName = "bash";
+				startInfo.ArgumentList.Add(absoluteScriptPath);
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			case".exe":
+				startInfo.FileName = absoluteScriptPath;
+				foreach(var segment in tailArguments)
+					startInfo.ArgumentList.Add(segment);
+				return true;
+			default:
+				error = $"错误：不支持的脚本扩展名「{extension}」。支持：.ps1 .bat .cmd .py .js .sh .exe";
+				return false;
 		}
 	}
-	[KernelFunction]
-	[SuppressMessage("ReSharper", "InconsistentNaming")]
-	[Description("读取技能")]
+	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("读取技能"),]
 	// ReSharper disable once UnusedMember.Global
-	public string LearnSkill(
+	public string learn_skill(
 		[Description("技能id，与系统消息中列表一致")]string skill_id,
 		[Description("相对技能根目录的文件路径，缺省表示 SKILL.md")]
 		string? relative_path = null)
@@ -158,10 +167,8 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		builder.AppendLine();
 		return builder.ToString();
 	}
-	[KernelFunction]
-	[SuppressMessage("ReSharper", "InconsistentNaming")]
-	[Description("在技能根目录作为工作目录下执行技能包内脚本，标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe")]
-	public async Task<string> RunSkillScript(
+	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("在技能根目录作为工作目录下执行技能包内脚本，标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe"),]
+	public async Task<string> run_skill_script(
 		[Description("技能 id，与系统消息中列表一致")]string skill_id,
 		[Description("相对技能根目录的脚本文件路径")]string relative_path,
 		[Description("可选：按顺序传给脚本的命令行参数")]string[]? script_args = null)
@@ -180,10 +187,16 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 			return"错误：relative_path 无效。";
 		if(!TryResolveUnderRoot(skillRoot, relativeSegment, out var absoluteScript, out var resolveError))
 			return resolveError;
-		var tailArguments = script_args is {Length: > 0}? script_args : Array.Empty<string>();
-		if(!TryConfigureScriptLaunch(absoluteScript, skillRoot, tailArguments, out var startInfo, out var launchError))
+		var tailArguments = script_args is {Length: > 0,}? script_args : Array.Empty<string>();
+		if(!TryConfigureScriptLaunch(
+			   absoluteScript,
+			   skillRoot,
+			   tailArguments,
+			   out var startInfo,
+			   out var launchError))
 			return launchError;
-		using var process = new Process {StartInfo = startInfo,};
+		using var process = new Process();
+		process.StartInfo = startInfo;
 		try { process.Start(); }
 		catch(Exception exception) { return$"错误：无法启动进程：{exception.Message}"; }
 		var readStandardOutput = process.StandardOutput.ReadToEndAsync();
@@ -191,14 +204,18 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		var waitForExit = process.WaitForExitAsync();
 		try
 		{
-			await Task.WhenAll(readStandardOutput, readStandardError, waitForExit)
+			await Task
+				.WhenAll(readStandardOutput, readStandardError, waitForExit)
 				.WaitAsync(TimeSpan.FromMinutes(5))
 				.ConfigureAwait(false);
 		}
 		catch(TimeoutException)
 		{
 			try { process.Kill(entireProcessTree: true); }
-			catch { /* 忽略 */ }
+			catch
+			{
+				/* 忽略 */
+			}
 			return"错误：脚本执行超过 5 分钟已终止。";
 		}
 		var standardOutputText = await readStandardOutput.ConfigureAwait(false);
