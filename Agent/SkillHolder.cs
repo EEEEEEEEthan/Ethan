@@ -7,6 +7,13 @@ static class SkillHolder
 	{
 		get
 		{
+			var cwd = Environment.CurrentDirectory;
+			if(!string.IsNullOrEmpty(cwd))
+			{
+				// 工作目录优先，同名技能 id 与全局冲突时主 id 落在本仓库
+				yield return Path.Combine(cwd, ".cursor", "skills");
+				yield return Path.Combine(cwd, ".ethan", "skills");
+			}
 			var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 			if(string.IsNullOrEmpty(userProfile))
 				yield break;
