@@ -5,14 +5,15 @@ using Microsoft.SemanticKernel;
 namespace Agent;
 public sealed class FileEditPlugin
 {
-	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("用 new_text 替换文件中唯一一次出现的 old_text；old_text 必须与文件全文逐字一致且整段只出现一次，否则报错不写入。"),]
+	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("替换文本"),]
 	// ReSharper disable once UnusedMember.Global
 	public static string apply_patch(
 		[Description("目标文件路径，可为绝对路径或相对当前工作目录")]
 		string file_path,
-		[Description("要被替换的原文片段，须在文件中恰好出现一次")]string old_text,
+		[Description("要被替换的原文片段，须在文件中出现且仅出现一次")]string old_text,
 		[Description("替换后的内容")]string? new_text = null)
 	{
+		Console.WriteLine($"[apply_patch] 请求参数：file_path='{file_path}', old_text='{old_text}', new_text='{new_text}'");
 		if(string.IsNullOrWhiteSpace(file_path))
 			return"错误：file_path 不能为空。";
 		if(old_text.Length == 0)
@@ -29,10 +30,11 @@ public sealed class FileEditPlugin
 		catch(UnauthorizedAccessException exception) { return$"错误：无权读取文件：{exception.Message}"; }
 		const StringComparison comparison = StringComparison.Ordinal;
 		var occurrences = CountNonOverlappingOccurrences(content, old_text, comparison);
-		if(occurrences == 0)
-			return"错误：文件中未找到与 old_text 完全一致的片段。";
-		if(occurrences > 1)
-			return$"错误：old_text 在文件中出现 {occurrences} 次，必须为恰好 1 次。";
+		switch(occurrences)
+		{
+			case 0: return"错误：文件中未找到与 old_text 完全一致的片段。";
+			case> 1: return$"错误：old_text 在文件中出现 {occurrences} 次，必须为恰好 1 次。";
+		}
 		var index = content.IndexOf(old_text, comparison);
 		var updated = string.Concat(content.AsSpan(0, index), replacement, content.AsSpan(index + old_text.Length));
 		EnsureConsoleOnNewLineBeforeToolLog();
