@@ -10,39 +10,53 @@ public sealed class FileEditPlugin
 	public static string apply_patch(
 		[Description("目标文件路径，可为绝对路径或相对当前工作目录")]
 		string file_path,
-		[Description("要被替换的原文片段，须在文件中出现且仅出现一次")]string old_text,
+		[Description("要被替换的原文片段，须在文件中出现且仅出现一次")]
+		string old_text,
 		[Description("替换后的内容")]string? new_text = null)
 	{
-		Console.WriteLine($"[apply_patch] 请求参数：file_path='{file_path}', old_text='{old_text}', new_text='{new_text}'");
+		var color = Console.ForegroundColor;
+		Console.ForegroundColor = ConsoleColor.DarkRed;
+		Console.WriteLine("[apply_patch]");
+		Console.ForegroundColor = color;
 		if(string.IsNullOrWhiteSpace(file_path))
-			return"错误：file_path 不能为空。";
+			return Fail("错误：file_path 不能为空。");
 		if(old_text.Length == 0)
-			return"错误：old_text 不能为空字符串。";
+			return Fail("错误：old_text 不能为空字符串。");
 		var replacement = new_text ?? string.Empty;
 		string fullPath;
 		try { fullPath = Path.GetFullPath(file_path.Trim()); }
-		catch(Exception exception) { return$"错误：路径无效：{exception.Message}"; }
+		catch(Exception exception) { return Fail($"错误：路径无效：{exception.Message}"); }
 		if(!File.Exists(fullPath))
-			return$"错误：文件不存在：{fullPath}";
+			return Fail($"错误：文件不存在：{fullPath}");
 		string content;
 		try { content = File.ReadAllText(fullPath, Encoding.UTF8); }
-		catch(IOException exception) { return$"错误：无法读取文件：{exception.Message}"; }
-		catch(UnauthorizedAccessException exception) { return$"错误：无权读取文件：{exception.Message}"; }
+		catch(IOException exception) { return Fail($"错误：无法读取文件：{exception.Message}"); }
+		catch(UnauthorizedAccessException exception) { return Fail($"错误：无权读取文件：{exception.Message}"); }
 		const StringComparison comparison = StringComparison.Ordinal;
 		var occurrences = CountNonOverlappingOccurrences(content, old_text, comparison);
 		switch(occurrences)
 		{
-			case 0: return"错误：文件中未找到与 old_text 完全一致的片段。";
-			case> 1: return$"错误：old_text 在文件中出现 {occurrences} 次，必须为恰好 1 次。";
+			case 0:
+				return Fail("错误：文件中未找到与 old_text 完全一致的片段。");
+			case> 1:
+				return Fail($"错误：old_text 在文件中出现 {occurrences} 次，必须为恰好 1 次。");
 		}
 		var index = content.IndexOf(old_text, comparison);
 		var updated = string.Concat(content.AsSpan(0, index), replacement, content.AsSpan(index + old_text.Length));
 		EnsureConsoleOnNewLineBeforeToolLog();
 		Console.WriteLine($"[apply_patch {fullPath}]");
 		try { File.WriteAllText(fullPath, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)); }
-		catch(IOException exception) { return$"错误：无法写入文件：{exception.Message}"; }
-		catch(UnauthorizedAccessException exception) { return$"错误：无权写入文件：{exception.Message}"; }
+		catch(IOException exception) { return Fail($"错误：无法写入文件：{exception.Message}"); }
+		catch(UnauthorizedAccessException exception) { return Fail($"错误：无权写入文件：{exception.Message}"); }
 		return"成功：已替换唯一匹配处并保存（UTF-8，无 BOM）。";
+		string Fail(string message)
+		{
+			EnsureConsoleOnNewLineBeforeToolLog();
+			Console.ForegroundColor = ConsoleColor.DarkRed;
+			Console.WriteLine(message);
+			Console.ForegroundColor = color;
+			return message;
+		}
 	}
 	static void EnsureConsoleOnNewLineBeforeToolLog()
 	{
