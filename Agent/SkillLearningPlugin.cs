@@ -110,8 +110,9 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 			return false;
 		}
 	}
-	[SuppressMessage("ReSharper", "InconsistentNaming"),
-	 Description("读取技能"),]
+	[KernelFunction]
+	[SuppressMessage("ReSharper", "InconsistentNaming")]
+	[Description("读取技能")]
 	// ReSharper disable once UnusedMember.Global
 	public string LearnSkill(
 		[Description("技能id，与系统消息中列表一致")]string skill_id,
@@ -144,8 +145,9 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		builder.AppendLine();
 		return builder.ToString();
 	}
-	[SuppressMessage("ReSharper", "InconsistentNaming"),
-	 Description("在技能根目录作为工作目录下执行技能包内脚本，标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe"),]
+	[KernelFunction]
+	[SuppressMessage("ReSharper", "InconsistentNaming")]
+	[Description("在技能根目录作为工作目录下执行技能包内脚本，标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe")]
 	public async Task<string> RunSkillScript(
 		[Description("技能 id，与系统消息中列表一致")]string skill_id,
 		[Description("相对技能根目录的脚本文件路径")]string relative_path,
