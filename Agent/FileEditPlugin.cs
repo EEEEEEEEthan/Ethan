@@ -28,8 +28,12 @@ public sealed class FileEditPlugin
 		try { content = File.ReadAllText(fullPath, Encoding.UTF8); }
 		catch(IOException exception) { return Message($"错误：无法读取文件：{exception.Message}", ConsoleColor.DarkRed); }
 		catch(UnauthorizedAccessException exception) { return Message($"错误：无权读取文件：{exception.Message}", ConsoleColor.DarkRed); }
+		var fileOriginallyHadCrLf = content.Contains("\r\n", StringComparison.Ordinal);
+		var workContent = ToLfForPatchMatching(content);
+		var workOld = ToLfForPatchMatching(old_text);
+		var workReplacement = ToLfForPatchMatching(replacement);
 		const StringComparison comparison = StringComparison.Ordinal;
-		var occurrences = CountNonOverlappingOccurrences(content, old_text, comparison);
+		var occurrences = CountNonOverlappingOccurrences(workContent, workOld, comparison);
 		switch(occurrences)
 		{
 			case 0:
@@ -37,22 +41,27 @@ public sealed class FileEditPlugin
 			case> 1:
 				return Message($"错误：old_text 在文件中出现 {occurrences} 次，必须为恰好 1 次。", ConsoleColor.DarkRed);
 		}
-		var index = content.IndexOf(old_text, comparison);
-		var updated = string.Concat(content.AsSpan(0, index), replacement, content.AsSpan(index + old_text.Length));
+		var index = workContent.IndexOf(workOld, comparison);
+		var updatedLf = string.Concat(workContent.AsSpan(0, index), workReplacement, workContent.AsSpan(index + workOld.Length));
+		var updated = ToOriginalNewlinesIfCrLfFile(updatedLf, fileOriginallyHadCrLf);
 		EnsureConsoleOnNewLineBeforeToolLog();
 		try { File.WriteAllText(fullPath, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)); }
 		catch(IOException exception) { return Message($"错误：无法写入文件：{exception.Message}", ConsoleColor.DarkRed); }
 		catch(UnauthorizedAccessException exception) { return Message($"错误：无权写入文件：{exception.Message}", ConsoleColor.DarkRed); }
 		return Message("成功：已替换唯一匹配处并保存（UTF-8，无 BOM）。", ConsoleColor.DarkGreen);
-		string Message(string message, ConsoleColor color)
+		string Message(string messageText, ConsoleColor foreground)
 		{
 			EnsureConsoleOnNewLineBeforeToolLog();
-			Console.ForegroundColor = color;
-			Console.WriteLine($"[{nameof(apply_patch)}]{message}");
-			Console.ForegroundColor = color;
-			return message;
+			var previousForeground = Console.ForegroundColor;
+			Console.ForegroundColor = foreground;
+			Console.WriteLine($"[{nameof(apply_patch)}]{messageText}");
+			Console.ForegroundColor = previousForeground;
+			return messageText;
 		}
 	}
+	static string ToLfForPatchMatching(string value) => value.Replace("\r\n", "\n", StringComparison.Ordinal);
+	static string ToOriginalNewlinesIfCrLfFile(string lfNormalized, bool fileOriginallyHadCrLf) =>
+		fileOriginallyHadCrLf ? lfNormalized.Replace("\n", "\r\n", StringComparison.Ordinal) : lfNormalized;
 	static void EnsureConsoleOnNewLineBeforeToolLog()
 	{
 		try
