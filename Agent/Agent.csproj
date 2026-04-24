@@ -51,6 +51,12 @@
         <PackageReference Include="Microsoft.SemanticKernel.Connectors.OpenAI" Version="1.74.0"/>
     </ItemGroup>
 
+    <!-- 单文件发布时去掉引用程序集旁的 .xml，使输出目录仅剩 Agent.exe -->
+    <Target Name="RemoveXmlFromPublish" AfterTargets="ComputeFilesToPublish">
+        <ItemGroup>
+            <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.Extension)' == '.xml'"/>
+        </ItemGroup>
+    </Target>
 
 </Project>
 
