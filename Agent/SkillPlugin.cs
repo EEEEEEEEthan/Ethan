@@ -70,14 +70,13 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 	}
 	static bool TryConfigureScriptLaunch(
 		string absoluteScriptPath,
-		string skillRootFull,
 		string[] tailArguments,
 		out ProcessStartInfo startInfo,
 		out string error)
 	{
 		startInfo = new()
 		{
-			WorkingDirectory = skillRootFull,
+			WorkingDirectory = Directory.GetCurrentDirectory(),
 			UseShellExecute = false,
 			CreateNoWindow = true,
 			RedirectStandardOutput = true,
@@ -170,7 +169,7 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 		builder.AppendLine();
 		return builder.ToString();
 	}
-	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("在技能根目录作为工作目录下执行技能包内脚本，标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe"),]
+	[KernelFunction, SuppressMessage("ReSharper", "InconsistentNaming"), Description("在 Agent 当前工作目录下执行技能包内脚本（脚本路径仍须相对技能根且受沙箱校验），标准输出与标准错误合并返回。支持 .ps1 .bat .cmd .py .js .sh .exe"),]
 	public async Task<string> run_skill_script(
 		[Description("技能 id，与系统消息中列表一致")]string skill_id,
 		[Description("相对技能根目录的脚本文件路径")]string relative_path,
@@ -194,12 +193,7 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 		if(!TryResolveUnderRoot(skillRoot, relativeSegment, out var absoluteScript, out var resolveError))
 			return resolveError;
 		var tailArguments = script_args is {Length: > 0,}? script_args : Array.Empty<string>();
-		if(!TryConfigureScriptLaunch(
-			   absoluteScript,
-			   skillRoot,
-			   tailArguments,
-			   out var startInfo,
-			   out var launchError))
+		if(!TryConfigureScriptLaunch(absoluteScript, tailArguments, out var startInfo, out var launchError))
 			return launchError;
 		using var process = new Process();
 		process.StartInfo = startInfo;
