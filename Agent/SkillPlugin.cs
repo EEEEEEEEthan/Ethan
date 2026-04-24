@@ -144,10 +144,7 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
 		EnsureConsoleOnNewLineBeforeToolLog();
-		var color = Console.ForegroundColor;
-		Console.ForegroundColor = ConsoleColor.DarkGray;
-		Console.WriteLine($"[learn {skill_id} {relative_path}]");
-		Console.ForegroundColor = color;
+		ConsoleColored.WriteLine(ConsoleColor.DarkGray, $"[learn {skill_id} {relative_path}]");
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var useImplicitDefault = string.IsNullOrWhiteSpace(relative_path);
 		var relativeSegment = useImplicitDefault? defaultRelativeFile : relative_path!.Trim().TrimStart('/', '\\');
@@ -182,10 +179,9 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
 		EnsureConsoleOnNewLineBeforeToolLog();
-		var color = Console.ForegroundColor;
-		Console.ForegroundColor = ConsoleColor.DarkGray;
-		Console.WriteLine($"[run_skill_script {skill_id} {relative_path} {string.Join(' ', script_args ?? [])}]");
-		Console.ForegroundColor = color;
+		ConsoleColored.WriteLine(
+			ConsoleColor.DarkGray,
+			$"[run_skill_script {skill_id} {relative_path} {string.Join(' ', script_args ?? [])}]");
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var relativeSegment = relative_path.Trim().TrimStart('/', '\\');
 		if(string.IsNullOrEmpty(relativeSegment))
@@ -231,6 +227,24 @@ public sealed class SkillPlugin(Dictionary<string, (string Id, string Descriptio
 		{
 			builder.AppendLine("--- stderr ---");
 			builder.AppendLine(standardErrorText);
+			try
+			{
+				if(!Console.IsOutputRedirected)
+				{
+					ConsoleColored.WriteLine(ConsoleColor.DarkRed, "--- stderr ---");
+					ConsoleColored.Write(ConsoleColor.DarkRed, standardErrorText);
+					if(!standardErrorText.EndsWith('\n'))
+						Console.WriteLine();
+				}
+			}
+			catch(IOException)
+			{
+				/* 无控制台 */
+			}
+			catch(InvalidOperationException)
+			{
+				/* 无控制台 */
+			}
 		}
 		return builder.ToString();
 	}

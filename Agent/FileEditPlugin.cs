@@ -52,10 +52,7 @@ public sealed class FileEditPlugin
 		string Message(string messageText, ConsoleColor foreground)
 		{
 			EnsureConsoleOnNewLineBeforeToolLog();
-			var previousForeground = Console.ForegroundColor;
-			Console.ForegroundColor = foreground;
-			Console.WriteLine($"[{nameof(apply_patch)}]{messageText}");
-			Console.ForegroundColor = previousForeground;
+			ConsoleColored.WriteLine(foreground, $"[{nameof(apply_patch)}]{messageText}");
 			return messageText;
 		}
 	}
