@@ -48,7 +48,7 @@ public sealed class FileEditPlugin
 		try { File.WriteAllText(fullPath, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)); }
 		catch(IOException exception) { return Message($"错误：无法写入文件：{exception.Message}", ConsoleColor.DarkRed); }
 		catch(UnauthorizedAccessException exception) { return Message($"错误：无权写入文件：{exception.Message}", ConsoleColor.DarkRed); }
-		return Message("成功：已替换唯一匹配处并保存（UTF-8，无 BOM）。", ConsoleColor.DarkGreen);
+		return Message("成功", ConsoleColor.DarkGreen);
 		string Message(string messageText, ConsoleColor foreground)
 		{
 			EnsureConsoleOnNewLineBeforeToolLog();
