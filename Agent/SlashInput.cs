@@ -54,7 +54,7 @@ public sealed class SlashPromptCallbacks: PromptCallbacks
 					                   若已含完整路径 …/chat/completions 则原样使用
 					环境变量 OPENAI_* 若已设置则优先于配置文件
 					/new               开始新对话（仅保留技能系统消息）
-					/update-skills     重新扫描 .cursor/skills 与 skills-cursor 并建立技能索引
+					/update-skills     重新扫描用户目录下 .cursor/skills 与 .ethan/skills 并建立技能索引
 					/exit 或 /quit     退出
 					""");
 				return true;

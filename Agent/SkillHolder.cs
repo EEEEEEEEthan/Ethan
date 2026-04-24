@@ -11,6 +11,7 @@ static class SkillHolder
 			if(string.IsNullOrEmpty(userProfile))
 				yield break;
 			yield return Path.Combine(userProfile, ".cursor", "skills");
+			yield return Path.Combine(userProfile, ".ethan", "skills");
 		}
 	}
 	public static void Rebuild() { Index = null!; }
