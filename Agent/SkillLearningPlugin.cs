@@ -7,6 +7,18 @@ namespace Agent;
 public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string Description, string Path)> skillIndex)
 {
 	const string defaultRelativeFile = "SKILL.md";
+	static void EnsureConsoleOnNewLineBeforeToolLog()
+	{
+		try
+		{
+			if(Console.IsOutputRedirected)
+				return;
+			if(Console.CursorLeft != 0)
+				Console.WriteLine();
+		}
+		catch(IOException) { /* 无控制台 */ }
+		catch(InvalidOperationException) { /* 无控制台 */ }
+	}
 	static bool TryResolveUnderRoot(string skillRootFull, string relativePath, out string absoluteFile, out string error)
 	{
 		absoluteFile = string.Empty;
@@ -123,6 +135,7 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 			return"错误：skill_id 不能为空。";
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
+		EnsureConsoleOnNewLineBeforeToolLog();
 		Console.WriteLine($"[learn {skill_id} {relative_path}]");
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var useImplicitDefault = string.IsNullOrWhiteSpace(relative_path);
@@ -159,6 +172,7 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 			return"错误：relative_path 不能为空。";
 		if(!skillIndex.TryGetValue(skill_id.Trim(), out var summary))
 			return$"错误：未找到技能 id「{skill_id}」。请使用系统消息中列出的 id。";
+		EnsureConsoleOnNewLineBeforeToolLog();
 		Console.WriteLine($"[run_skill_script {skill_id} {relative_path}]");
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var relativeSegment = relative_path.Trim().TrimStart('/', '\\');

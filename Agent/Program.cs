@@ -98,7 +98,14 @@ file static class Program
 		static string formatTextForWindowsConsolePiece(string segment, ref bool pendingCarriageReturn)
 		{
 			if(segment.Length == 0)
+			{
+				if(Environment.NewLine is"\r\n" && pendingCarriageReturn)
+				{
+					pendingCarriageReturn = false;
+					return"\r";
+				}
 				return string.Empty;
+			}
 			if(Environment.NewLine is not"\r\n"
 			   || (!pendingCarriageReturn && segment.AsSpan().IndexOfAny('\r', '\n') < 0))
 				return segment;
