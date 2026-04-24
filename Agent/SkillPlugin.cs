@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using Microsoft.SemanticKernel;
 namespace Agent;
-public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string Description, string Path)> skillIndex)
+public sealed class SkillPlugin(Dictionary<string, (string Id, string Description, string Path)> skillIndex)
 {
 	const string defaultRelativeFile = "SKILL.md";
 	static void EnsureConsoleOnNewLineBeforeToolLog()
@@ -185,7 +185,7 @@ public sealed class SkillLearningPlugin(Dictionary<string, (string Id, string De
 		EnsureConsoleOnNewLineBeforeToolLog();
 		var color = Console.ForegroundColor;
 		Console.ForegroundColor = ConsoleColor.DarkGray;
-		Console.WriteLine($"[run_skill_script {skill_id} {relative_path}]");
+		Console.WriteLine($"[run_skill_script {skill_id} {relative_path} {string.Join(' ', script_args ?? [])}]");
 		Console.ForegroundColor = color;
 		var skillRoot = Path.GetFullPath(summary.Path);
 		var relativeSegment = relative_path.Trim().TrimStart('/', '\\');

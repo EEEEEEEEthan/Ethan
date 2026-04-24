@@ -21,7 +21,7 @@ static class KernelHolder
 					serviceId: null,
 					httpClient: HttpClient);
 				field = builder.Build();
-				field.ImportPluginFromObject(new SkillLearningPlugin(SkillHolder.Index), "skills");
+				field.ImportPluginFromObject(new SkillPlugin(SkillHolder.Index), "skills");
 				field.ImportPluginFromObject(new FileEditPlugin(), "files");
 			}
 			return field;
